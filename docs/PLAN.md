@@ -16,10 +16,13 @@
 8. [AutOSINT Triage](#8-autosint-triage)
 9. [External Module Pattern](#9-external-module-pattern)
 10. [Tech Stack](#10-tech-stack)
-11. [Research Findings](#11-research-findings)
-12. [Stress Test Results](#12-stress-test-results)
-13. [Key Decisions Log](#13-key-decisions-log)
-14. [Not Yet Designed](#14-not-yet-designed)
+11. [Error Handling](#11-error-handling)
+12. [CI & Testing](#12-ci--testing)
+13. [Deployment](#13-deployment)
+14. [Research Findings](#14-research-findings)
+15. [Stress Test Results](#15-stress-test-results)
+16. [Key Decisions Log](#16-key-decisions-log)
+17. [Not Yet Designed](#17-not-yet-designed)
 
 ---
 
@@ -91,9 +94,27 @@ We don't encode analytical logic in code. We build the infrastructure — storag
 
 We do NOT predefine source reliability tiers. Sources are entities in the knowledge graph — with ownership, track record, incentive structures, geographic base, and relationships. The LLM assesses reliability by traversing this information, not by reading a predefined tier label. This means the system can discover things like: "this outlet is owned by this conglomerate, which has a stake in this industry, and this article is about regulation of that industry" — without anyone hardcoding that bias.
 
+### All Numeric Parameters are Runtime-Configurable
+
+No numeric limit, threshold, or tuning parameter is hardcoded into compiled code. Safety limits (max cycles, max turns, max work orders), concurrency parameters (Processor pool size, browser context cap), retry counts, backoff intervals, timeouts, cache TTLs, tool result size limits, embedding dimensions — all configurable at runtime. The right values for these are discovered empirically by running the system, not by guessing upfront. A recompile-to-test-a-different-number iteration loop is unacceptable for the kind of rapid tuning this system requires.
+
 ### Depth = Graph Density, Not Record Complexity
 
 The LLM goes deeper by creating more entities and relationships, not by adding more properties to existing ones. Understanding emerges from the structure of the graph. A densely connected area of the graph represents deep understanding. A sparse area represents shallow or no understanding. The LLM's editorial judgment about depth manifests as how far it expands the graph, not how detailed individual records are.
+
+### Observability is Built In, Not Added Later
+
+Every service emits structured logs, exposes Prometheus metrics, and participates in distributed traces from the first line of code. This is not extra work after the system works — it's how we know the system works.
+
+**Structured logging**: all services emit JSON-structured logs with consistent fields. `investigation_id` is the critical correlation key — filter by it and see the entire investigation story end-to-end across all services. Rust uses the `tracing` crate (structured, async-aware, OpenTelemetry-compatible). Python (Scribe) uses `structlog`. Node.js (fetch-browser) uses `pino`.
+
+**Metrics**: every service exposes a `/metrics` endpoint in Prometheus format. Prometheus scrapes on interval. Key metrics cover: investigation lifecycle, Processor pool utilization, LLM API latency/cost/errors, database health and query latency, work order queue depth, cache hit rates, Fetch/Geo/Scribe throughput.
+
+**Distributed tracing**: OpenTelemetry trace context propagated in HTTP headers across service boundaries. An investigation trace spans Analyst sessions, work orders, Processor execution, Fetch/Geo/Scribe calls — full request flow visibility.
+
+**Alerting**: critical (infrastructure unreachable, all Processors dead, LLM API down), warning (high utilization, growing queue depth, elevated error rates), informational (investigation completed/failed, Processor restarted).
+
+**Observability stack**: Grafana (dashboards + alerting), Prometheus (metrics), Loki (log aggregation), Tempo (distributed tracing — add when needed). All open source, all Docker containers. Pre-built dashboards: System Overview, Investigation Detail, Processor Pool, LLM Usage, Infrastructure Health.
 
 ---
 
@@ -255,7 +276,166 @@ The Analyst's analytical products. Distinct from claims — these are the system
 
 An assessment that honestly says "I don't know, and here's specifically what I don't know and why" is a complete, valuable product.
 
-### 4.4 LLM Roles
+### 4.4 Database Schemas
+
+#### Neo4j Knowledge Graph Schema
+
+**Minimum version: Neo4j 5.18+** (required for vector indexes on relationship properties).
+
+**Node: Entity**
+```
+(:Entity {
+  id:             String,       // system-generated UUID
+  canonical_name: String,
+  aliases:        [String],
+  kind:           String,       // loose descriptive label
+  summary:        String,       // LLM-generated living summary
+  is_stub:        Boolean,
+  last_updated:   DateTime,
+  embedding:      [Float],      // vector for semantic search (name + summary)
+  // ... freeform properties the LLM adds
+  // ... external identifiers (wikidata_qid, stock_ticker, iso_code, etc.)
+})
+```
+
+**Node: Claim**
+```
+(:Claim {
+  id:                  String,
+  content:             String,
+  published_timestamp: DateTime,
+  ingested_timestamp:  DateTime,
+  raw_source_link:     String,
+  attribution_depth:   String,   // "primary" or "secondhand"
+  embedding:           [Float],  // vector for semantic search (content)
+})
+```
+
+**Edges:**
+- `(:Entity)-[:PUBLISHED]->(:Claim)` — source entity (publication/outlet) that produced the claim
+- `(:Claim)-[:REFERENCES]->(:Entity)` — entities the claim is about (one claim, many referenced entities)
+- `(:Entity)-[:RELATES_TO]->(:Entity)` — relationships between entities, with properties:
+
+```
+[:RELATES_TO {
+  id:            String,
+  description:   String,       // freeform natural language, semantically searched
+  weight:        Float,
+  confidence:    Float,
+  bidirectional: Boolean,
+  timestamp:     DateTime,
+  embedding:     [Float],      // vector for semantic search (description)
+}]
+```
+
+For bidirectional relationships, one edge is stored with `bidirectional: true`; query tools traverse in both directions.
+
+**Indexes:**
+
+| Index Type | Target | Property | Purpose |
+|---|---|---|---|
+| Full-text | :Entity | canonical_name, aliases | Processor dedup, keyword search |
+| Vector | :Entity | embedding | Semantic entity search |
+| Uniqueness | :Entity | id | Integrity |
+| Range | :Entity | kind | Filtering by entity type |
+| Range | :Entity | last_updated | Temporal queries |
+| Full-text | :Claim | content | Keyword claim search |
+| Vector | :Claim | embedding | Semantic claim search |
+| Range | :Claim | published_timestamp | Temporal filtering/sorting |
+| Range | :Claim | ingested_timestamp | Temporal filtering |
+| Uniqueness | :Claim | id | Integrity |
+| Full-text | :RELATES_TO | description | Keyword relationship search |
+| Vector | :RELATES_TO | embedding | Semantic relationship search |
+
+**What gets embedded:**
+- Entity: canonical_name + summary, concatenated
+- Claim: content
+- Relationship: description
+
+Embeddings computed at write time via embedding API, stored as node/relationship properties.
+
+#### PostgreSQL Schema (Assessment Store + Orchestrator State)
+
+```sql
+-- Analytical products
+CREATE TABLE assessments (
+    id               UUID PRIMARY KEY,
+    investigation_id UUID NOT NULL REFERENCES investigations(id),
+    content          JSONB NOT NULL,     -- structured assessment (schema TBD with prompt engineering)
+    confidence       TEXT NOT NULL,      -- high / moderate / low
+    entity_refs      JSONB NOT NULL,     -- array of Neo4j entity IDs
+    claim_refs       JSONB NOT NULL,     -- array of Neo4j claim IDs
+    embedding        vector,             -- pgvector, for semantic search
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Investigation lifecycle tracking
+CREATE TABLE investigations (
+    id                      UUID PRIMARY KEY,
+    prompt                  TEXT NOT NULL,
+    status                  TEXT NOT NULL,   -- pending, active, completed, failed
+    parent_investigation_id UUID REFERENCES investigations(id),
+    cycle_count             INT NOT NULL DEFAULT 0,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at            TIMESTAMPTZ
+);
+
+-- Persistent work order records
+CREATE TABLE work_orders (
+    id                  UUID PRIMARY KEY,
+    investigation_id    UUID NOT NULL REFERENCES investigations(id),
+    objective           TEXT NOT NULL,
+    status              TEXT NOT NULL,   -- queued, processing, completed, failed
+    priority            INT NOT NULL DEFAULT 0,
+    referenced_entities JSONB,           -- Neo4j entity IDs for context
+    source_guidance     JSONB,           -- directional hints about where to look
+    processor_id        TEXT,            -- which processor handled this
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at        TIMESTAMPTZ
+);
+
+-- Indexes
+CREATE INDEX idx_assessments_embedding ON assessments
+    USING ivfflat (embedding vector_cosine_ops);
+CREATE INDEX idx_assessments_investigation ON assessments(investigation_id);
+CREATE INDEX idx_investigations_status ON investigations(status);
+CREATE INDEX idx_work_orders_investigation ON work_orders(investigation_id);
+CREATE INDEX idx_work_orders_status ON work_orders(status);
+```
+
+Entity/claim refs stored as JSONB arrays (not join tables) — these are cross-database references to Neo4j IDs with no FK constraint possible. Primary assessment query pattern is semantic search, not entity-based lookup. Assessment `content` JSONB schema will be defined alongside Analyst prompt engineering.
+
+#### Redis Schema (Work Order Queue)
+
+**Redis Streams** (not Lists) — consumer groups, acknowledgment, pending entry detection for crash recovery.
+
+**Priority streams:**
+```
+workorders:high
+workorders:normal
+workorders:low
+```
+
+One consumer group (`processors`) per stream. Processors check high → normal → low.
+
+**Message payload:**
+```json
+{
+  "work_order_id": "uuid",
+  "investigation_id": "uuid",
+  "objective": "find military installations near Djibouti",
+  "referenced_entities": ["entity-uuid-1", "entity-uuid-2"],
+  "source_guidance": {"prefer": ["web_search", "government_databases"]}
+}
+```
+
+**Lifecycle:**
+1. Analyst creates work order → Orchestrator writes to PostgreSQL (queued) + XADD to Redis stream
+2. Processor XREADGROUP → claims message → PostgreSQL updated (processing)
+3. Processor finishes → XACK in Redis → PostgreSQL updated (completed)
+4. Processor crash → message stays in pending entries list → Orchestrator reclaims after timeout
+
+### 4.5 LLM Roles
 
 #### Processor
 
@@ -301,7 +481,7 @@ An assessment that honestly says "I don't know, and here's specifically what I d
 
 **Model requirements:** Needs the most capable model available. This is where reasoning quality directly affects output quality.
 
-### 4.5 Work Order System
+### 4.6 Work Order System
 
 Work orders are **discovery directives**, not extraction scopes. They direct WHERE to look and WHAT to look for, not what to extract from found documents (extraction is always comprehensive).
 
@@ -320,39 +500,121 @@ The Processor doesn't need to know WHY — it finds documents matching the objec
 
 **Centralized queue (Redis)** enables tracking, parallel execution across multiple Processors, and work order deduplication (to prevent redundant work when multiple Analysts create similar orders).
 
-### 4.6 Orchestration
+### 4.7 Orchestration
 
 The **orchestrator** is deterministic Rust code — not an LLM. It is a **session manager and work dispatcher**. It does not make analytical decisions, assemble context, or decide what's relevant.
 
-**Investigation lifecycle:**
+#### Investigation State Machine
 
-1. Investigation prompt arrives → orchestrator creates investigation record in PostgreSQL
-2. Starts an **Analyst agentic session** with: the investigation prompt + tool access (graph queries, Assessment Store queries, AutOSINT Geo queries, work order creation, AutOSINT Fetch source catalog)
-3. Analyst self-serves retrieval, reasons, outputs: work orders and/or an assessment
-4. If work orders: orchestrator queues them in Redis, dispatches to available Processors
-5. Processors execute in parallel: call AutOSINT Fetch for data retrieval, extract claims, write to graph, mark work orders complete
-6. On completion of all work orders for this cycle → orchestrator starts a new Analyst agentic session with the same investigation prompt + same tool access (graph now has new data from Processors)
-7. Repeat until Analyst produces an assessment → orchestrator writes to Assessment Store, marks investigation complete
+**States:**
 
-**Orchestrator responsibilities:**
-- Investigation lifecycle management (create, track cycles, complete)
+```
+PENDING → ANALYST_RUNNING → PROCESSING → ANALYST_RUNNING → ... → COMPLETED
+               ↓    ↑            ↓    ↑
+            FAILED   |         FAILED  |
+               ↓     |            ↓    |
+           SUSPENDED -+       SUSPENDED-+
+```
+
+- **`PENDING`** — Investigation record created, not yet started.
+- **`ANALYST_RUNNING`** — Analyst agentic session in progress.
+- **`PROCESSING`** — Work orders dispatched, Processors working.
+- **`SUSPENDED`** — Paused due to hard dependency failure. Persisted in PostgreSQL with reason, timestamp, and resume point. Not failed (retryable), not active (can't proceed). Survives Engine restarts.
+- **`COMPLETED`** — Assessment produced. Terminal.
+- **`FAILED`** — Unrecoverable error. Terminal, but still produces a partial assessment (see below).
+
+**Transitions:**
+
+| From | To | Trigger |
+|---|---|---|
+| PENDING | ANALYST_RUNNING | Orchestrator starts Analyst session |
+| ANALYST_RUNNING | PROCESSING | Analyst created work orders. Orchestrator dispatches to Redis, increments cycle_count. |
+| ANALYST_RUNNING | COMPLETED | Analyst called `produce_assessment`. Assessment written to store. |
+| ANALYST_RUNNING | ANALYST_RUNNING | Analyst session ended with no work orders and no assessment (empty session). Retry once. Second empty session → force final assessment mode. |
+| ANALYST_RUNNING | FAILED | Unrecoverable error (LLM API consistently down, repeated session failures). |
+| ANALYST_RUNNING | SUSPENDED | Hard dependency circuit opens during Analyst session. |
+| PROCESSING | ANALYST_RUNNING | All work orders for this cycle resolved (completed or permanently failed). Start new Analyst session. |
+| PROCESSING | FAILED | Two consecutive cycles where ALL work orders failed. |
+| PROCESSING | SUSPENDED | Hard dependency circuit opens during processing. |
+| SUSPENDED | ANALYST_RUNNING | Dependency recovers (circuit closes). Fresh Analyst session — graph is the memory. |
+| any active | COMPLETED | Max cycles reached → force final Analyst session with modified prompt. Not a failure — resource-bounded completion. |
+
+**SUSPENDED persistence** (additional columns on investigations table):
+```sql
+suspended_reason  TEXT,          -- 'neo4j_unavailable', 'llm_api_down', etc.
+suspended_at      TIMESTAMPTZ,
+resume_from       TEXT,          -- 'analyst' or 'processing'
+```
+
+**Engine restart recovery:** On startup, the Orchestrator queries PostgreSQL for non-terminal investigations. SUSPENDED → check dependency health, resume if available. ANALYST_RUNNING/PROCESSING → Engine crashed mid-operation, treat as suspended. PostgreSQL is the durable source of truth; the Orchestrator reconstructs working state from it.
+
+**Work order sub-states:**
+
+```
+QUEUED → ASSIGNED → COMPLETED
+                  → FAILED → QUEUED (retry once)
+                           → FAILED (permanent)
+```
+
+The Orchestrator waits for all work orders in a cycle to resolve (completed OR permanently failed), then starts the next Analyst cycle regardless of partial failures. The Analyst sees the graph state and can re-request data it's missing.
+
+#### Processor Liveness: Heartbeats
+
+Processors send periodic heartbeats while working, rather than relying on fixed timeouts. A Processor blocked on a long operation (e.g., waiting 30+ minutes for Scribe to transcribe a 3-hour video in a foreign language) continues heartbeating the entire time.
+
+- Processor writes to Redis key `processor:{id}:heartbeat` with a short TTL (e.g., 60 seconds), refreshed periodically.
+- Orchestrator checks for expired heartbeat keys. Expired = Processor dead → reclaim its work order from Redis pending entries list, re-queue.
+- Decouples "how long does the work take" (unbounded) from "is the Processor alive" (heartbeat interval).
+
+#### Investigation History (Anti-Dedup)
+
+No algorithmic work order deduplication. Instead, the Analyst has visibility into its own investigation history via tool access (`get_investigation_history`). It can see what was requested in prior cycles, what succeeded, what failed, and how many claims were produced. The Analyst naturally avoids redundant requests because it has the context to make that judgment. If it re-requests something, it has a reason.
+
+This aligns with the core design philosophy: the LLM makes the judgment, we provide the information. Max cycles is the safety net for genuine loops.
+
+#### Failed Investigations
+
+A `FAILED` investigation still produces a partial assessment. If any graph data was accumulated before failure, the Orchestrator runs one final Analyst session with a modified prompt: "Produce the best assessment you can with available information, noting all gaps, limitations, and failures encountered." Intelligence reports are never expected to be complete — they are as complete as possible given available information. A partial assessment with honest limitations is a valid product.
+
+#### Safety Limits
+
+| Limit | Default | On trigger |
+|---|---|---|
+| Max cycles per investigation | Configurable (e.g., 10) | Force final Analyst session: "This is your final cycle. Produce an assessment with available information." |
+| Max turns per Analyst session | Configurable (e.g., 50 tool calls) | End session. If no actionable output, treat as empty session (retry once). |
+| Heartbeat TTL | Configurable (e.g., 60 seconds) | Expired = Processor considered dead, work order reclaimed. |
+| Consecutive all-fail cycles | 2 | Transition to FAILED (with partial assessment attempt). |
+| Max work orders per cycle | Configurable (e.g., 20) | Prevents runaway discovery in a single cycle. |
+
+All limits are configurable at runtime via the config system.
+
+#### Concurrent Investigations
+
+Each investigation is an independent state machine. The Orchestrator manages a collection concurrently. They share the Processor pool — work orders from different investigations go into the same Redis streams. Processors are investigation-agnostic; they just process work orders. The `investigation_id` on each work order tracks which investigation it belongs to.
+
+#### Orchestrator Responsibilities
+
+- Investigation lifecycle state management
 - Work order dispatch and completion tracking
-- Processor pool management (available, busy, assignments)
+- Processor pool management and heartbeat monitoring
 - Assessment routing to Assessment Store
-- Providing tool access to Analyst sessions
+- Providing tool access to Analyst/Processor sessions
+- Safety limit enforcement
 
 **What the orchestrator does NOT do:**
 - Make analytical decisions
 - Pre-query the graph or assemble context
 - Decide when an investigation is complete (the Analyst decides)
 - Decide what's relevant (the Analyst decides)
+- Deduplicate work orders (the Analyst avoids redundancy via investigation history)
 
-**Multi-Analyst investigations (future):**
+#### Multi-Analyst Investigations (Future)
+
 For large investigations, a planning Analyst call can decompose the investigation into parallel sub-investigations. Multiple Analysts run concurrently, all sharing the same graph. A synthesis Analyst produces a final assessment built from the child assessments. Child Analysts produce normal assessments — no special types. The orchestrator manages parent-child investigation records and triggers synthesis on completion.
 
 This is NOT built first. Build single-Analyst investigations first. Add multi-Analyst decomposition when empirical data shows where single Analysts struggle. The decomposition guidance (how big is "too big," what are right-sized sub-investigations) can only be determined from experience.
 
-### 4.7 Search & Retrieval
+### 4.8 Search & Retrieval
 
 Three search modes, all native in Neo4j:
 
@@ -374,26 +636,172 @@ Three search modes, all native in Neo4j:
 | Processor | Existing entities | Keyword/name + embedding similarity | Deduplication |
 | [Future] Monitor | Assessments vs user interests | Semantic matching over Assessment Store | User delivery |
 
-### 4.8 Tool Layer
+### 4.9 Tool Layer
 
 LLMs interact with the system through **predefined functions** (not raw queries). Interfaces are hardcoded; usage is LLM-decided.
 
-**Tools available to the Analyst:**
-- Query entities (by name, kind, properties, semantic search)
-- Traverse relationships (from entity outward, filtered by description/direction/weight)
-- Query claims (by entity, by time range, by source, semantic search)
-- Query assessments (semantic search over Assessment Store)
-- Create work orders (write to Redis queue)
-- Query AutOSINT Geo (geographic context, spatial queries, terrain, borders, features)
-- Query AutOSINT Fetch source catalog (see available data sources)
+#### Agentic Loop Mechanics
 
-**Tools available to Processors:**
-- Query entities (for deduplication — name/alias matching + embedding similarity)
-- Store entities (create new or update existing)
-- Store claims (append to graph)
-- Store relationships (create new or update existing)
-- Query AutOSINT Fetch (source catalog, data retrieval, raw HTTP, browser automation)
-- Query AutOSINT Scribe (submit transcription jobs, poll for results)
+The core cycle for both Analyst and Processor sessions:
+
+1. Build messages: system prompt + conversation history + tool definitions
+2. Send to LLM API with tool definitions
+3. Response contains either:
+   - **Text only** → session complete
+   - **Tool call(s)** → execute each, append `tool_result` to conversation history, back to step 1
+4. Repeat until session termination
+
+The Engine's `llm/` module implements this loop as a thin wrapper — tool calling, response parsing, session management, error handling, retries.
+
+#### Session Model
+
+Each Analyst cycle is a **fresh session** — same investigation prompt, same tools, clean conversation history. The Analyst's memory between cycles is the graph itself. If it requested data in cycle 1, those claims are now in the graph. In cycle 2 it queries the graph, finds them, reasons from there.
+
+Benefits of fresh sessions per cycle:
+- No context window accumulation across cycles
+- No risk of anchoring on prior reasoning instead of re-evaluating with new data
+- Graph is the single source of truth, not conversation history
+
+The Analyst can query the Assessment Store for prior assessments on related topics and query work order history in PostgreSQL to see what's already been requested — orientation without conversation continuity.
+
+#### Session Termination
+
+**Analyst sessions** end in one of two ways (mutually exclusive):
+- Calls `create_work_order` (one or more times) → "I need more data." Orchestrator dispatches work orders, starts new cycle after completion.
+- Calls `produce_assessment` → "I'm done." Writes to Assessment Store, marks investigation complete.
+
+These are mutually exclusive by design. The Analyst system prompt should align the Analyst to naturally reason toward one or the other — framed as a decision point, not a rule to follow.
+
+Safety limit: max turns per session. If reached, Orchestrator flags the investigation for review.
+
+**Processor sessions** end when the LLM stops calling tools (text-only response). The Processor has no special termination tools — it extracts claims, creates entities/relationships, and stops when done.
+
+#### Tool Definitions in Config
+
+Tool schemas live in `config/tools/` as JSON files, loaded at runtime:
+
+```
+config/tools/
+├── analyst/           # tool schemas for Analyst sessions
+│   ├── search_entities.json
+│   ├── search_claims.json
+│   ├── traverse_relationships.json
+│   └── ...
+└── processor/         # tool schemas for Processor sessions
+    ├── search_entities.json
+    ├── create_entity.json
+    ├── create_claim.json
+    └── ...
+```
+
+Each file is the JSON schema the LLM sees (name, description, parameters). The Engine loads these at startup and passes them to the LLM API. The Rust `tools/` module has a handler registry mapping tool names to implementation functions. Schema describes the interface; Rust code implements the behavior. Tool descriptions can be iterated without recompiling; handler behavior changes require recompile.
+
+#### Analyst Tools
+
+```
+search_entities(query, kind?, limit?)
+    → [{id, canonical_name, kind, summary, score}]
+
+get_entity(entity_id)
+    → {full entity with all properties}
+
+traverse_relationships(entity_id, direction?, description_query?, min_weight?, limit?)
+    → [{relationship, connected_entity}]
+
+search_relationships(query, limit?)
+    → [{relationship, source_entity, target_entity}]
+
+search_claims(query?, entity_id?, source_entity_id?, published_after?,
+              published_before?, attribution_depth?, sort_by?, limit?)
+    → [{id, content, published_timestamp, source, attribution_depth, referenced_entities}]
+
+search_assessments(query, limit?)
+    → [{id, confidence, summary, created_at}]
+
+get_assessment(assessment_id)
+    → {full assessment content}
+
+create_work_order(objective, referenced_entities?, source_guidance?, priority?)
+    → {work_order_id}
+
+produce_assessment(content, confidence, entity_refs, claim_refs)
+    → {assessment_id}
+
+get_investigation_history()
+    → [{cycle, work_orders: [{objective, status, claims_produced_count}]}]
+    Current investigation's history. Prevents redundant work orders
+    without algorithmic dedup — Analyst sees what was already requested.
+
+query_geo(query_type, parameters)
+    → structured text from AutOSINT Geo
+
+list_fetch_sources()
+    → [{id, name, description, capabilities}]
+```
+
+#### Processor Tools
+
+```
+search_entities(query, limit?)
+    → [{id, canonical_name, aliases, kind, score}]
+    For deduplication before creating entities.
+
+create_entity(canonical_name, aliases, kind, summary?, is_stub?, properties?)
+    → {entity_id}
+
+update_entity(entity_id, updates)
+    → success/failure
+
+create_claim(source_entity_id, content, published_timestamp,
+             referenced_entity_ids, raw_source_link, attribution_depth)
+    → {claim_id}
+
+create_relationship(source_entity_id, target_entity_id, description,
+                    weight?, confidence?, bidirectional?, timestamp?)
+    → {relationship_id}
+
+update_relationship(relationship_id, updates)
+    → success/failure
+
+fetch_source_catalog()
+    → [{id, name, description}]
+
+fetch_source_query(source_id, query_params)
+    → {content, metadata}
+
+fetch_url(url)
+    → {content, metadata}
+
+browse_url(url)
+    → {rendered_content, metadata}
+    Simple render, no interaction.
+
+browser_open(url)
+    → {rendered_content, session_id}
+    Starts interactive WebSocket session.
+
+browser_click(session_id, selector)
+    → {rendered_content}
+
+browser_fill(session_id, selector, value)
+    → {rendered_content}
+
+browser_scroll(session_id, direction?)
+    → {rendered_content}
+
+browser_close(session_id)
+    → confirmation
+
+submit_transcription(url, platform?, context?, diarization?)
+    → {job_id}
+
+get_transcription(job_id, timeout?)
+    → transcription result (blocking long-poll)
+```
+
+Browser tools return rendered DOM/text content, not screenshots. The Processor reasons over HTML structure to identify selectors. All write tools (create_entity, create_claim, create_relationship) compute and store embeddings at write time.
+
+IO contracts for all tools will be refined during implementation to ensure seamless integration.
 
 ---
 
@@ -458,16 +866,17 @@ Cache applies to fetched document content, not to source API query results (thos
 
 ### 5.4 Browser Automation
 
-Node.js + Playwright service within Fetch. Capabilities:
+Browser automation runs as a **separate Node.js + Playwright sidecar** container, not inside the Rust Fetch service. Fetch's Rust core handles source adapters, caching, rate limiting, and raw HTTP. When browser rendering or interaction is needed, Fetch delegates to the sidecar.
 
-- Render JavaScript-heavy pages
-- Manage sessions and cookies across requests
-- Handle authentication flows
-- Navigate multi-page content (pagination, load-more buttons)
-- Support platform-specific browsing profiles
-- Graceful degradation — returns "could not access source" rather than crashing
+**Sidecar architecture:**
 
-**Security isolation:** Browser automation runs in its own container with limited network access. No direct graph access.
+- **Always-running** Docker container managed by Docker Compose. Headless Chromium idles at ~100-200MB. No cold start penalty when browser automation is needed.
+- **Concurrent browser contexts.** Multiple requests handled simultaneously via isolated Playwright browser contexts (separate cookies, sessions, storage) within a single browser instance. Concurrency cap (e.g., 4-6 contexts) to manage memory pressure. Requests beyond the cap queue until a context frees up.
+- **Two interaction modes:**
+  - **Simple render (HTTP):** Navigate to URL, wait for JavaScript, return rendered DOM. Covers the common case — pages that need JS to render but don't need interaction. Single request/response via Fetch's `/browse` endpoint.
+  - **Interactive session (WebSocket):** Bidirectional, continuous transaction between the Processor and the sidecar (proxied through Fetch). The Processor controls navigation step-by-step — it sees the rendered page, reasons about it, sends the next command (click, fill, scroll), sees the result, reasons again. The Processor doesn't know what's on the page until it sees it, so interaction cannot be pre-programmed. The Engine's tool layer exposes this as browser tools (`browser_open`, `browser_click`, `browser_fill`, `browser_close`) and manages the WebSocket connection underneath.
+
+**Security isolation:** Browser sidecar runs in its own container with limited network access. No direct graph access. No access to Engine internals.
 
 ### 5.5 API
 
@@ -485,9 +894,15 @@ POST /fetch                    → raw HTTP fetch
                                  Input: { url, options }
                                  Returns: { content, metadata (status, content_type, etc.) }
 
-POST /browse                   → browser-automated fetch
-                                 Input: { url, options (wait_for, interact, auth_profile) }
+POST /browse                   → simple browser-automated fetch (render only)
+                                 Input: { url, options (wait_for, timeout) }
                                  Returns: { content, metadata }
+
+WS   /browse/session           → interactive browser session (WebSocket)
+                                 Bidirectional: Processor sends commands
+                                 (navigate, click, fill, scroll, close),
+                                 sidecar returns rendered content after each action.
+                                 Session persists until explicitly closed.
 ```
 
 All responses return content in a normalized format that the Processor can extract claims from.
@@ -755,10 +1170,13 @@ All external modules (Fetch, Geo, Scribe, Triage) follow the same architectural 
 | Module | Language | Why |
 |--------|----------|-----|
 | Engine | Rust | Performance, concurrency, long-term scalability |
-| Fetch (browser automation) | Node.js + Playwright | Playwright's native environment |
+| Fetch (core) | Rust | Shares types with Engine via common crate, HTTP client work is natural Rust |
+| Fetch (browser sidecar) | Node.js + Playwright | Playwright's native environment; small, focused container |
+| Geo | Rust | Shares types with Engine via common crate, PostGIS queries via sqlx |
 | Scribe | Python + Whisper | Whisper and audio libraries are Python-native |
-| Geo | TBD (likely Python or Go) | PostGIS integration |
 | Triage | TBD | TBD |
+
+**Monorepo with shared types:** Engine, Fetch (core), and Geo are all Rust crates in a single Cargo workspace. They share API contract types via a common crate (`autosint-common`), providing compile-time guarantees that services agree on request/response schemas. When a Fetch response type changes, the Engine won't compile until it handles the change.
 
 ---
 
@@ -776,6 +1194,54 @@ Chosen for long-term scalability over development speed. The system needs to be 
 LLM integration is straightforward HTTP + JSON (reqwest + serde). No LLM framework needed.
 
 **Prompts and tool schemas are loaded from config files at runtime**, NOT compiled in. This enables rapid iteration on prompt engineering without recompiling.
+
+### Project Structure
+
+Single monorepo. Rust workspace for all Rust crates, separate directories for non-Rust services.
+
+```
+autosint/
+├── Cargo.toml                  # workspace root
+├── docker-compose.yml
+├── docs/
+│   └── PLAN.md
+├── config/                     # runtime config (prompts, tool schemas, limits)
+│   ├── prompts/                # Analyst/Processor system prompts
+│   ├── tools/                  # tool definitions as JSON schemas
+│   └── system.toml             # numeric parameters, model config, timeouts
+├── crates/
+│   ├── common/                 # autosint-common — shared API contract types,
+│   │                           #   config structures, identifiers, error types
+│   ├── engine/                 # autosint-engine — core system (single binary)
+│   ├── fetch/                  # autosint-fetch — data retrieval service
+│   └── geo/                    # autosint-geo — geographic oracle service
+├── services/
+│   ├── fetch-browser/          # Node.js Playwright sidecar
+│   └── scribe/                 # Python transcription service
+├── observability/
+│   ├── grafana/                # dashboard definitions, datasource config
+│   ├── prometheus/             # prometheus.yml (scrape targets)
+│   └── loki/                   # loki config
+├── CLAUDE.md
+└── .gitignore
+```
+
+**Engine internal modules** (within `crates/engine/src/`):
+
+```
+├── main.rs
+├── orchestrator/       # investigation lifecycle, work dispatch
+├── analyst/            # Analyst agentic session management
+├── processor/          # Processor session management
+├── tools/              # tool definitions and execution layer
+├── llm/                # thin LLM client wrapper (API calls, parsing)
+├── graph/              # Neo4j client and query functions
+├── store/              # PostgreSQL client (assessments, investigations)
+├── queue/              # Redis client (work orders)
+└── config/             # config file loading
+```
+
+**`config/` directory** is mounted into the Engine container at runtime. Edit a prompt or tool schema, restart the container — no recompile needed.
 
 ### Databases & Infrastructure
 
@@ -824,7 +1290,238 @@ Starting scale: a single well-speced VPS (32-64GB RAM) or small cloud deployment
 
 ---
 
-## 11. Research Findings
+## 11. Error Handling
+
+Cross-cutting concern that touches every module. Errors are expected, not exceptional.
+
+### Dependency Classification
+
+**Hard dependencies** — system cannot function without them:
+- Neo4j, PostgreSQL, Redis, LLM API
+- Failure → investigation SUSPENDED, critical alert
+
+**Soft dependencies** — system degrades but continues:
+- Fetch (Processors can't retrieve new data; Analyst reasons over existing graph)
+- Geo (Analyst loses geographic context, notes the gap)
+- Scribe (Processors skip multimedia sources, note limitation)
+
+### Errors as Tool Results
+
+When a tool call fails due to a soft dependency, the error is returned as a tool result — NOT a session crash:
+
+```json
+{
+  "type": "tool_result",
+  "content": "Error: AutOSINT Geo is currently unavailable.",
+  "is_error": true
+}
+```
+
+The LLM adapts: works around the limitation, documents the gap. Consistent with the design philosophy — the LLM makes the judgment about how to handle degraded conditions.
+
+Hard dependency failures during a tool call escalate to session failure (the session genuinely can't continue).
+
+### Retry Strategy
+
+Consistent retry pattern across the system via a shared utility:
+
+```rust
+struct RetryConfig {
+    max_attempts: u32,
+    initial_backoff_ms: u64,
+    max_backoff_ms: u64,
+    backoff_multiplier: f64,
+    jitter: bool,
+}
+```
+
+| Target | Attempts | Initial | Max | Rationale |
+|---|---|---|---|---|
+| LLM API | 3 | 1s | 30s | Rate limits need longer backoff; respect Retry-After |
+| Databases | 3 | 500ms | 10s | Usually recovers quickly or is truly down |
+| External modules | 2 | 1s | 5s | Degrade gracefully, don't wait long |
+
+All values runtime-configurable. Exponential backoff with jitter on all retries.
+
+**What does NOT get retried:** authentication failures (alert immediately), constraint violations (log, likely a bug), invalid tool call parameters (return error to LLM for self-correction), context window exceeded (structural, not transient).
+
+### Circuit Breakers
+
+Prevents hammering a dead service:
+
+- **Closed** (normal): requests flow. Failures exceeding threshold → Open.
+- **Open**: requests fail immediately. After cooldown → Half-Open.
+- **Half-Open**: one probe request. Success → Closed. Failure → re-Open.
+
+Circuit breaker on every external dependency. Thresholds and cooldowns runtime-configurable.
+
+When a hard dependency circuit opens → active investigations transition to SUSPENDED. When circuit closes → Orchestrator resumes SUSPENDED investigations.
+
+### LLM Self-Correction
+
+Malformed tool calls (invalid parameters, missing fields) are returned as error tool results. The LLM self-corrects on its next turn. If 3 consecutive malformed calls occur (configurable), the session ends — the LLM is confused, not self-correcting.
+
+### Error Propagation Layers
+
+1. **Tool handler**: catches error, retries, checks circuit breaker. Returns success or error as tool_result. Most errors handled here.
+2. **Agentic session**: hard dependency failure makes session impossible → `SessionResult::Failed(error)`.
+3. **Orchestrator**: follows state machine. Session failures → retry or FAILED. Work order failures → retry or permanent failure.
+4. **System-level**: all hard dependency circuits open → system degraded. Alerting fires. Investigations SUSPENDED. Auto-recovery when dependencies return.
+
+### Processor Crash Safety
+
+A Processor crash mid-write leaves partial committed writes in Neo4j. When the work order is reclaimed and re-processed:
+- Entity dedup catches already-created entities
+- Duplicate claims are harmless (append-only, same source/content)
+- Partial writes are non-corrupting by design
+
+No special rollback or cleanup needed.
+
+### Embedding Pipeline
+
+Every write to Neo4j (entity, claim, relationship) requires an embedding. The pipeline is **batched, synchronous, with fallback to backfill**.
+
+**Normal flow:**
+1. Processor extracts multiple entities/claims/relationships from a document.
+2. Collects all texts that need embedding (entity name+summary, claim content, relationship description).
+3. One batched embedding API call for all texts.
+4. Writes everything to Neo4j in a single transaction — data + embeddings together.
+
+**On embedding API failure** (retries exhausted):
+1. Write to Neo4j without embeddings. Flag records with `embedding_pending: true`.
+2. Graph stays current — no data loss from embedding outage.
+3. Records appear in keyword/full-text search and graph traversal (2 of 3 search modes). Missing from semantic/vector search only.
+
+**Backfill process:**
+Background task in the Engine that periodically queries Neo4j for `embedding_pending: true` records, computes embeddings in batch, updates the records. Runs every N minutes (configurable). When the embedding API recovers, the backlog clears automatically.
+
+**Embedding model configuration** (in system.toml):
+```toml
+[embeddings]
+provider = "openai"
+model = "text-embedding-3-small"
+dimensions = 1536
+batch_size = 100
+backfill_interval_minutes = 5
+```
+
+Provider-swappable (OpenAI initially → open source later) via the same config mechanism as LLM providers.
+
+---
+
+## 12. CI & Testing
+
+### Path-Filtered CI
+
+Monorepo CI runs path-filtered checks — changes to specific directories trigger only the relevant test groups. Exception: the full Rust workspace always builds together (a change to `common` can break downstream crates, and Cargo's incremental compilation makes full-workspace builds fast).
+
+**Rust workspace** (triggers on `crates/**` or `Cargo.*` changes):
+- `cargo fmt --check` — formatting gate
+- `cargo clippy -- -D warnings` — lint gate
+- `cargo test --workspace` — unit tests across all crates
+- `cargo build --release` — release build verification
+
+**Node.js sidecar** (triggers on `services/fetch-browser/**` changes):
+- Lint + type check
+- Unit tests
+
+**Python Scribe** (triggers on `services/scribe/**` changes):
+- Linter (ruff)
+- pytest unit tests
+
+### Integration Tests
+
+Scoped to database interactions — the riskiest boundaries in the system. Not a general "spin up everything" suite.
+
+**Why databases, specifically:**
+
+- **Neo4j (neo4rs):** Least mature driver in the stack. Vector index searches, full-text index searches, relationship property indexes (5.18+ dependency), multi-hop traversals, entity dedup cascade — subtle Cypher bugs silently degrade the system without crashing. A mocked Neo4j client tells you Rust compiles; it doesn't tell you queries return what you expect.
+- **Redis Streams:** Consumer groups, XREADGROUP blocking, XACK, pending entry reclamation — stateful interactions where order and timing matter. Mocks that return "success" don't validate behavioral semantics.
+- **PostgreSQL (pgvector):** Lowest risk due to sqlx compile-time query checking, but vector similarity search behavior (cosine distance thresholds, index scan vs sequential scan) is worth validating against real data.
+
+Integration tests run in CI with Neo4j, PostgreSQL, and Redis as service containers (GitHub Actions supports this natively). Run on PR and merge to main, not on every push to a feature branch.
+
+**What is NOT integration-tested in CI:**
+
+- **Module-to-module HTTP APIs.** Well-defined contracts, axum handler testing is straightforward with unit tests, and shared types in `autosint-common` catch contract drift at compile time.
+- **LLM API calls.** Expensive, non-deterministic, slow. LLM integration tested with mocked responses in CI. Real API validation is manual or scheduled, not gating.
+- **Docker image builds.** Images built on merge to main, not on every PR. PRs validate code, not containers.
+
+### Merge Gate
+
+All relevant path-filtered checks must pass. Integration tests must pass. No merge to main with failures.
+
+### Environment Consistency
+
+CI pins the same Neo4j, PostgreSQL, and Redis versions used in `docker-compose.yml`. Drift between CI and dev databases is a subtle bug source, especially given the Neo4j 5.18+ dependency for relationship vector indexes.
+
+---
+
+## 13. Deployment
+
+Three deployment stages. The key constraint: LLM API calls are the dominant cost and bottleneck, not compute. A single well-specced VPS handles far more load than expected.
+
+### Stage 1: Local Development (Docker Compose)
+
+Full service topology in Docker Compose:
+
+**Core services** (always running):
+- Engine, Fetch, Geo
+- Neo4j, PostgreSQL, Redis
+
+**Auxiliary services** (run when needed):
+- fetch-browser (Playwright sidecar)
+- Scribe
+- Grafana, Prometheus, Loki
+
+Docker Compose profiles control what runs: `docker compose up` for core, `docker compose --profile full up` for everything, `docker compose --profile observability up` for monitoring stack.
+
+**Config hot-reload:** `config/` directory volume-mounted into Engine container. Edit a prompt or tool schema, restart the container — no rebuild. Code changes require container rebuild (`docker compose up --build engine`), but Cargo caches make incremental rebuilds fast.
+
+**Database persistence:** Named volumes for Neo4j, PostgreSQL, Redis. Graph and state survive container restarts.
+
+### Stage 2: Single VPS Production (Docker Compose)
+
+Same Docker Compose with production overrides via `docker-compose.prod.yml`:
+- Resource limits per container
+- Restart policies (`unless-stopped`)
+- Production logging drivers (JSON to Loki)
+- Built images only (no source mounts)
+- Proper volume management with backup
+
+**CI → Production pipeline:** CI builds container images on merge to main, pushes to container registry (GitHub Container Registry). Deploy = pull new images + `docker compose up -d` on the VPS. Simple shell script or GitHub Actions workflow. No complex orchestration tooling — the system is simple enough that those add overhead without benefit at this scale.
+
+**Database backups:** Cron job on VPS. `neo4j-admin dump` for Neo4j, `pg_dump` for PostgreSQL. Redis is ephemeral (work orders also persist in PostgreSQL; Redis loss = re-queue from PG state, not data loss). Backups pushed to object storage.
+
+**Identical images across environments.** The same container images run in dev and prod. Only the orchestration layer (Compose config) and runtime config (config files, environment variables) differ.
+
+### Stage 3: Kubernetes
+
+For when horizontal Processor scaling or high availability becomes necessary.
+
+#### Processor Atomization (Future)
+
+In stages 1-2, Processors are tokio tasks inside the Engine binary. For Kubernetes scaling, Processors need to be independently scalable. The extraction is straightforward: Processors share no in-memory state with the Orchestrator. They read from Redis, call external modules, write to Neo4j, and heartbeat to Redis. When the time comes, factor into a separate `autosint-processor` binary. The Orchestrator doesn't care whether Processors are local tasks or remote containers — it dispatches to Redis, monitors heartbeats, and tracks completion. Same interface either way.
+
+**Do NOT build this separation prematurely.** Build Processors inside the Engine. Extract when scaling demands it.
+
+#### Kubernetes Topology
+
+- **Engine (Orchestrator):** Deployment, 1 replica initially
+- **Processors:** Separate Deployment, HPA (Horizontal Pod Autoscaler) scaled on Redis queue depth
+- **Fetch, Geo:** Deployments, 1-2 replicas
+- **Scribe:** Deployment, scaled based on transcription load
+- **fetch-browser:** Deployment, scaled with Fetch
+- **Databases:** Managed services (Cloud SQL, Neo4j Aura, managed Redis) preferred over self-hosted StatefulSets
+- **Config:** ConfigMaps for `config/` directory, Secrets for API keys
+
+**GitOps:** Manifests in repo, ArgoCD syncing to cluster. Appropriate at this scale.
+
+**Observability stack:** Same Grafana/Prometheus/Loki, deployed via Helm charts instead of Docker Compose. All three are Kubernetes-native.
+
+---
+
+## 14. Research Findings
 
 ### Geography + LLMs
 
@@ -867,7 +1564,7 @@ Key sources: Microsoft GraphRAG, LightRAG (EMNLP 2025), Neo4j GraphRAG Python pa
 
 ---
 
-## 12. Stress Test Results
+## 15. Stress Test Results
 
 ### Concurrency & Scale
 - **Multiple Analysts**: concurrent-safe. Graph reads concurrent, Analysts don't write to graph directly, assessments append-only. Redundant work across overlapping investigations solvable via work order deduplication.
@@ -890,7 +1587,7 @@ Key sources: Microsoft GraphRAG, LightRAG (EMNLP 2025), Neo4j GraphRAG Python pa
 
 ---
 
-## 13. Key Decisions Log
+## 16. Key Decisions Log
 
 | Decision | Rationale |
 |----------|-----------|
@@ -914,10 +1611,45 @@ Key sources: Microsoft GraphRAG, LightRAG (EMNLP 2025), Neo4j GraphRAG Python pa
 | Demand-driven, not continuous | System activates on investigation prompts. Graph grows as byproduct, not as goal. |
 | UX layer designed later | Engine is the core challenge. User interfaces and Monitor module come after Engine works. |
 | Triage designed later | Needs the Engine to exist first. Manual investigation triggers sufficient to start. |
+| Monorepo for all services | Single repo. Coordinated changes, shared Docker Compose, one place to clone. |
+| Fetch and Geo in Rust | Shared types with Engine via `autosint-common` crate. Compile-time API contract enforcement. |
+| Playwright sidecar (Node.js) | Only browser rendering needs Node.js. Fetch core is Rust. Sidecar is small, focused. |
+| Browser sessions via WebSocket | Processor controls navigation step-by-step. Bidirectional — can't pre-program interaction because Processor doesn't know what's on the page until it sees it. |
+| No browser platform profiles | Avoided pre-programming site-specific interaction patterns. Will observe what's needed in practice. |
+| Browser sidecar always-running | Docker container, not launched on demand. ~100-200MB idle. Eliminates cold start latency. |
+| Concurrent browser contexts | Multiple isolated Playwright contexts in one browser instance. Cap at 4-6 to manage memory. |
+| Processor heartbeats over fixed timeouts | Processors may block for 30+ minutes on legitimate work (e.g., waiting on Scribe for long transcriptions). Heartbeat TTL detects dead Processors without killing slow ones. |
+| Investigation history tool over algorithmic dedup | Analyst sees its own investigation history (prior work orders, results, claim counts). Avoids redundant requests via judgment, not fuzzy matching. Consistent with LLM-decides-analysis philosophy. |
+| Failed investigations still produce assessments | Intelligence is never complete — it's as complete as possible. Partial assessment with honest gaps is a valid product. |
+| Orchestrator state machine formalized | Explicit states (PENDING, ANALYST_RUNNING, PROCESSING, COMPLETED, FAILED), transitions, and triggers. Deterministic, no ambiguity. |
+| Relationships as native Neo4j edges | Neo4j 5.18+ supports vector/full-text indexes on relationship properties. Native edges give better traversal performance than intermediate nodes. |
+| Fresh Analyst sessions per cycle | No conversation continuity across cycles. Graph is the Analyst's memory. Prevents anchoring on prior reasoning. |
+| `create_work_order` and `produce_assessment` mutually exclusive | Analyst either requests more data or produces assessment in a given session. Aligned via prompt, not enforced as a rule. |
+| All numeric parameters runtime-configurable | Limits, thresholds, timeouts, concurrency caps, result sizes — all in config files. No recompile to test a different value. Empirical tuning requires fast iteration. |
+| LLM provider abstraction | Thin trait over Anthropic/OpenAI (extensible to others). Provider and model per role configured in config. Switching models is a config change. |
+| Anthropic Claude for both roles initially | Opus for Analyst (best reasoning), Sonnet for Processor (good extraction, lower cost). OpenAI for embeddings initially. |
+| Non-streaming LLM calls initially | No real-time user watching. Streaming adds complexity for no backend benefit. Add later if UX requires. |
+| Grafana + Prometheus + Loki observability stack | Open source, Docker-native, lightweight. Single pane of glass for logs, metrics, traces. Built from first line of code. |
+| `tracing` crate for all Rust observability | Structured logging, async-aware spans, OpenTelemetry integration. Consistent across Engine, Fetch, Geo. |
+| `investigation_id` as universal correlation key | Every log line, metric label, and trace span carries it. Filter by investigation_id to see full end-to-end story. |
+| Tool result size limits in handler_config | JSON tool configs have LLM-facing schema + handler_config section for limits. Both iterable without recompile. |
+| Hard vs soft dependency classification | Neo4j/PG/Redis/LLM are hard (SUSPEND on failure). Fetch/Geo/Scribe are soft (degrade gracefully, LLM adapts). |
+| Errors as tool results for soft failures | LLM sees the error and adapts — works around it, documents the gap. Session continues. |
+| SUSPENDED investigation state | Hard dependency down → investigation persisted for future retry. Survives Engine restarts. Auto-resumes on recovery. |
+| Circuit breakers on all dependencies | Prevents hammering dead services. Open/Closed/Half-Open pattern. Thresholds configurable. |
+| Shared retry utility | Consistent retry pattern (exponential backoff + jitter) across all services. Per-target defaults, all configurable. |
+| Processor writes are crash-safe | Entity dedup + append-only claims make partial writes non-corrupting. No rollback needed on Processor crash. |
+| Batched embeddings with backfill fallback | Processor batches all texts, one API call, write with embeddings. On failure: write without, flag `embedding_pending`, background backfill. Graph stays current; 2 of 3 search modes work without embeddings. |
+| Path-filtered CI with full Rust workspace builds | Monorepo triggers CI per changed path, but Rust always builds full workspace. Cross-crate breaks caught by shared `common` crate dependency. |
+| Integration tests scoped to database boundaries | Neo4j (least mature driver, non-trivial queries), Redis Streams (stateful behavioral semantics), pgvector (similarity search). Not module-to-module HTTP. Not LLM API calls. |
+| CI pins database versions to match docker-compose.yml | Prevents drift between CI and dev, especially for Neo4j 5.18+ relationship vector index dependency. |
+| Three-stage deployment: Docker Compose → VPS → Kubernetes | LLM API calls are the bottleneck, not compute. Single VPS carries far more load than expected. Kubernetes only when horizontal Processor scaling or HA needed. |
+| Processor atomization deferred to Kubernetes stage | Processors currently tokio tasks inside Engine. No in-memory state shared with Orchestrator — extraction to separate binary is straightforward when scaling demands it. Do not build prematurely. |
+| Same container images across all environments | Dev, VPS, Kubernetes run identical images. Only orchestration layer and runtime config differ. |
 
 ---
 
-## 14. Not Yet Designed
+## 17. Not Yet Designed
 
 ### AutOSINT Triage
 - How raw signals are monitored
@@ -933,18 +1665,9 @@ Key sources: Microsoft GraphRAG, LightRAG (EMNLP 2025), Neo4j GraphRAG Python pa
 - Monetization model (subscription, API access, tiered features)
 
 ### Implementation Details
-- Exact Rust project structure and module organization
-- Neo4j schema design (node labels, indexes, constraints)
-- PostgreSQL schema design (assessment table, investigation records, work order state)
-- Redis queue structure (streams vs lists, consumer groups)
-- Prompt engineering (Analyst system prompt, Processor system prompt, tool definitions)
-- LLM provider selection (Anthropic Claude vs OpenAI GPT vs mix)
-- Embedding model integration details
-- Error handling and retry strategies across services
-- Logging, monitoring, and observability
-- Testing strategy
-- Deployment pipeline
+- Prompt engineering (Analyst system prompt, Processor system prompt, assessment JSONB schema)
 - Geographic data sourcing and loading for Geo module
+- Grafana dashboard definitions
 
 ---
 
