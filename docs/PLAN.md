@@ -217,6 +217,10 @@ These are NOT the primary ID but serve as strong deduplication signals.
 2. Embedding similarity for semantic matching
 3. LLM judgment for the hard tail (ambiguous cases)
 
+**Post-hoc entity merging:** Deduplication won't be perfect. When the Analyst discovers during investigation that two entities are the same (e.g., "Ministry of Finance" and "Japan Ministry of Finance"), it can merge them via a dedicated tool. Merge reassigns all claims, relationships, and references from the source entity to the target entity, combines aliases, and deletes the source. This is a necessary correction mechanism — the system must be able to fix dedup failures, not just prevent them.
+
+**Dedup quality tracking:** False positives (wrongly merged entities) and false negatives (undetected duplicates) have very different downstream effects. False positives corrupt the graph — claims get attributed to the wrong entity. False negatives create redundancy — the same entity appears twice with split information. False positives are far more damaging. Both are tracked separately via metrics.
+
 #### Relationships (in Knowledge Graph)
 
 First-class objects connecting entities:
@@ -255,7 +259,7 @@ The Analyst uses attribution depth to judge when it needs to seek primary source
 
 **Dual timestamps are critical.** A Processor might process a 6-month-old article today. The published timestamp (6 months ago) tells the Analyst how current the information is. The ingested timestamp (today) tells when the system became aware. The Analyst is guided to consider temporal relevance per-claim, per-topic: "is information from this long ago still relevant for this particular topic?" A country's borders from 6 months ago — probably still valid. A company's CEO from 6 months ago — might have changed.
 
-**Changes are claims.** When entity state changes (rebrand, leadership change, acquisition), the Processor both updates the entity record (current state) AND extracts a claim capturing the change (history). The claim preserves what changed, when, according to whom. The entity always reflects current reality.
+**Changes are claims.** When entity state changes (rebrand, leadership change, acquisition), the Processor both updates the entity record (current state) AND extracts a claim capturing the change (history). The claim preserves what changed, when, according to whom. The entity always reflects current reality. The `update_entity_with_change_claim` tool combines both operations into a single call to prevent the Processor from forgetting one half of this pattern.
 
 #### Assessments (in Assessment Store)
 
@@ -563,6 +567,7 @@ The Orchestrator waits for all work orders in a cycle to resolve (completed OR p
 Processors send periodic heartbeats while working, rather than relying on fixed timeouts. A Processor blocked on a long operation (e.g., waiting 30+ minutes for Scribe to transcribe a 3-hour video in a foreign language) continues heartbeating the entire time.
 
 - Processor writes to Redis key `processor:{id}:heartbeat` with a short TTL (e.g., 60 seconds), refreshed periodically.
+- **Heartbeat runs as an independent tokio task**, separate from the main processing work. This is critical: a Processor blocked on a long-running operation (e.g., long-polling Scribe for a 3-hour transcription) must continue heartbeating the entire time. The heartbeat task and the processing task are independent concurrent futures.
 - Orchestrator checks for expired heartbeat keys. Expired = Processor dead → reclaim its work order from Redis pending entries list, re-queue.
 - Decouples "how long does the work take" (unbounded) from "is the Processor alive" (heartbeat interval).
 
@@ -696,6 +701,10 @@ config/tools/
 
 Each file is the JSON schema the LLM sees (name, description, parameters). The Engine loads these at startup and passes them to the LLM API. The Rust `tools/` module has a handler registry mapping tool names to implementation functions. Schema describes the interface; Rust code implements the behavior. Tool descriptions can be iterated without recompiling; handler behavior changes require recompile.
 
+**Startup validation:** The Engine validates all configuration on startup and **fails loudly** if anything is misconfigured. If a tool schema references a handler that doesn't exist in the registry, if a prompt file is missing, if required config fields are absent — the Engine refuses to start with a clear error message. Silent misconfiguration is unacceptable in a system where the LLM operates autonomously.
+
+**Intelligent tool result truncation:** Tool results are truncated to configurable size limits, but truncation is structural, not byte-level. Search results return the top N items with a count of omitted results (e.g., "showing 10 of 47 results"). Entity details truncate freeform properties before core fields. Claim searches truncate content previews before dropping results entirely. The LLM should always understand what was truncated and how much it's not seeing, so it can request more specifically if needed.
+
 #### Analyst Tools
 
 ```
@@ -732,6 +741,13 @@ get_investigation_history()
     Current investigation's history. Prevents redundant work orders
     without algorithmic dedup — Analyst sees what was already requested.
 
+merge_entities(source_entity_id, target_entity_id, reason?)
+    → {merged_entity}
+    Post-hoc dedup correction. Reassigns all claims, relationships,
+    and references from source to target. Combines aliases. Deletes source.
+    Logged as a merge event for audit. Analyst uses when it discovers
+    two entities are the same during investigation.
+
 query_geo(query_type, parameters)
     → structured text from AutOSINT Geo
 
@@ -751,6 +767,14 @@ create_entity(canonical_name, aliases, kind, summary?, is_stub?, properties?)
 
 update_entity(entity_id, updates)
     → success/failure
+
+update_entity_with_change_claim(entity_id, updates, claim: {source_entity_id,
+    content, published_timestamp, raw_source_link, attribution_depth})
+    → {entity_id, claim_id}
+    Atomic combined operation for the "changes as claims" pattern.
+    Updates entity state AND creates a claim recording the change in
+    a single tool call. Prevents the Processor from forgetting one
+    half of the operation when entity state changes.
 
 create_claim(source_entity_id, content, published_timestamp,
              referenced_entity_ids, raw_source_link, attribution_depth)
@@ -1633,6 +1657,12 @@ Key sources: Microsoft GraphRAG, LightRAG (EMNLP 2025), Neo4j GraphRAG Python pa
 | `tracing` crate for all Rust observability | Structured logging, async-aware spans, OpenTelemetry integration. Consistent across Engine, Fetch, Geo. |
 | `investigation_id` as universal correlation key | Every log line, metric label, and trace span carries it. Filter by investigation_id to see full end-to-end story. |
 | Tool result size limits in handler_config | JSON tool configs have LLM-facing schema + handler_config section for limits. Both iterable without recompile. |
+| Intelligent tool result truncation | Truncation is structural, not byte-level. Search results show top N with omitted count. LLM always knows what it's not seeing. |
+| Post-hoc entity merging via Analyst tool | Dedup won't be perfect. Analyst can merge entities discovered to be duplicates during investigation. Necessary correction mechanism. |
+| Dedup false positive vs false negative tracking | Tracked separately. False positives (wrong merges) corrupt the graph and are far more damaging than false negatives (missed duplicates). |
+| `update_entity_with_change_claim` combined tool | Single Processor tool call for the "changes as claims" pattern. Prevents forgetting to create the claim when updating entity state. |
+| Config validation fails loudly on startup | Missing prompt files, orphaned tool schemas, invalid config → Engine refuses to start. Silent misconfiguration is unacceptable. |
+| Heartbeat as independent tokio task | Processor heartbeat runs as a separate async task from processing work. Ensures liveness signal continues during long-blocking operations (e.g., Scribe long-polls). |
 | Hard vs soft dependency classification | Neo4j/PG/Redis/LLM are hard (SUSPEND on failure). Fetch/Geo/Scribe are soft (degrade gracefully, LLM adapts). |
 | Errors as tool results for soft failures | LLM sees the error and adapts — works around it, documents the gap. Session continues. |
 | SUSPENDED investigation state | Hard dependency down → investigation persisted for future retry. Survives Engine restarts. Auto-resumes on recovery. |

@@ -54,7 +54,8 @@ Everything else depends on this. No intelligence logic — pure infrastructure.
 - [ ] Config structs in `autosint-common` (deserialized via serde from TOML)
 - [ ] Tool schema loading from JSON files (deferred: actual tool schemas written in M3/M4)
 - [ ] Prompt template loading from text files (deferred: actual prompts written in M3/M4)
-- [ ] Validation on load (required fields, sane ranges)
+- [ ] Validation on load (required fields, sane ranges) — **Engine refuses to start on validation failure** with clear error messages
+- [ ] Cross-validation: tool schemas reference only registered handlers, all prompt files exist, no orphaned config
 
 ### Database Clients
 
@@ -168,6 +169,7 @@ This is the foundation the entire system reasons over. Every subsequent mileston
 - [ ] `search_entities` — filtered by `kind`, temporal range on `last_updated`
 - [ ] Stub entity support: `is_stub` flag, create stubs with minimal data
 - [ ] External identifier storage (wikidata_qid, stock_ticker, iso_code, etc. as node properties)
+- [ ] `merge_entities` — merge source entity into target: reassign all PUBLISHED/REFERENCES edges from claims, reassign all RELATES_TO edges (both directions), combine aliases, delete source entity, log merge event for audit
 
 ### Claim Operations
 
@@ -229,6 +231,7 @@ This is the foundation the entire system reasons over. Every subsequent mileston
 - [ ] Multi-hop traversal test (A→B→C, query from A with depth 2)
 - [ ] Embedding pipeline tests (batch embed, write, verify searchable)
 - [ ] `embedding_pending` backfill test (write without embedding, run backfill, verify searchable)
+- [ ] Entity merge test (create two entities with claims and relationships, merge, verify all edges reassigned, source deleted, aliases combined)
 
 ### Observability
 
@@ -236,6 +239,7 @@ This is the foundation the entire system reasons over. Every subsequent mileston
 - [ ] Embedding API call metrics (latency, tokens, errors)
 - [ ] Entity/claim/relationship count metrics (gauges)
 - [ ] Embedding backfill queue depth metric
+- [ ] Entity dedup metrics: dedup stage hit rates (string/embedding/LLM), false positive count (tracked via `merge_entities` calls — each merge implies a prior dedup failure), entity merge count
 
 ---
 
@@ -289,6 +293,7 @@ This is the first moment of truth. The LLM touches the system for the first time
 - [ ] Error as tool_result: handler failures return `{ "is_error": true, "content": "..." }` to LLM
 - [ ] LLM self-correction tracking: count consecutive malformed tool calls, end session after 3 (configurable)
 - [ ] Tool result size limits (from `handler_config` in tool JSON files)
+- [ ] Intelligent truncation: search results return top N with omitted count (not byte-level cutoff), entity details truncate freeform properties before core fields, claim searches truncate content previews before dropping results — LLM always knows what was truncated and how much it's missing
 
 ### Processor Tool Schemas
 
@@ -301,6 +306,7 @@ This is the first moment of truth. The LLM touches the system for the first time
 - [ ] `config/tools/processor/create_relationship.json`
 - [ ] `config/tools/processor/update_relationship.json`
 - [ ] `config/tools/processor/fetch_url.json`
+- [ ] `config/tools/processor/update_entity_with_change_claim.json`
 - [ ] `config/tools/processor/fetch_source_catalog.json`
 - [ ] `config/tools/processor/fetch_source_query.json`
 
@@ -313,6 +319,7 @@ Wire each tool to the graph operations from M2 and Fetch from below:
 - [ ] `search_entities` handler → graph client semantic + full-text search
 - [ ] `create_entity` handler → graph client create_entity (with dedup check first)
 - [ ] `update_entity` handler → graph client update_entity
+- [ ] `update_entity_with_change_claim` handler → graph client update_entity + create_claim in single transaction (atomic "changes as claims" pattern)
 - [ ] `create_claim` handler → graph client create_claim
 - [ ] `create_relationship` handler → graph client create_relationship
 - [ ] `update_relationship` handler → graph client update_relationship
@@ -404,7 +411,7 @@ The Analyst drives its own investigation: queries the graph, identifies gaps, cr
 
 - [ ] Tokio task pool: spawn Processor sessions as tasks
 - [ ] Configurable pool size (from `system.toml`)
-- [ ] Heartbeat system: Processor writes Redis key `processor:{id}:heartbeat` with short TTL, refreshes periodically
+- [ ] Heartbeat system: Processor writes Redis key `processor:{id}:heartbeat` with short TTL, refreshes periodically — **heartbeat runs as an independent tokio task**, separate from the main processing work (critical for Processors blocked on long operations like Scribe long-polls)
 - [ ] Heartbeat monitoring: Orchestrator checks for expired heartbeat keys
 - [ ] Dead Processor handling: expired heartbeat → reclaim work order, log event
 - [ ] Processor lifecycle: idle → claim work order → run session → report result → idle
@@ -464,6 +471,7 @@ The Analyst drives its own investigation: queries the graph, identifies gaps, cr
 - [ ] `config/tools/analyst/get_assessment.json`
 - [ ] `config/tools/analyst/create_work_order.json`
 - [ ] `config/tools/analyst/produce_assessment.json`
+- [ ] `config/tools/analyst/merge_entities.json`
 - [ ] `config/tools/analyst/get_investigation_history.json`
 - [ ] `config/tools/analyst/list_fetch_sources.json`
 - [ ] `config/tools/analyst/query_geo.json` (handler returns "Geo unavailable" until M5)
@@ -479,6 +487,7 @@ The Analyst drives its own investigation: queries the graph, identifies gaps, cr
 - [ ] `search_claims` handler → graph client claim search (all filter modes)
 - [ ] `search_assessments` handler → Assessment Store semantic search
 - [ ] `get_assessment` handler → Assessment Store get by ID
+- [ ] `merge_entities` handler → graph client merge_entities (reassign edges, combine aliases, delete source, log merge event)
 - [ ] `create_work_order` handler → work order enqueue (PostgreSQL + Redis)
 - [ ] `produce_assessment` handler → Assessment Store write
 - [ ] `get_investigation_history` handler → PostgreSQL query (work orders for current investigation, grouped by cycle)
