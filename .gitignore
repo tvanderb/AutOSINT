@@ -1,1 +1,48 @@
+# Working context
 .claude_context
+
+# Rust
+target/
+**/*.rs.bk
+
+# Node.js
+node_modules/
+services/fetch-browser/dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+.venv/
+venv/
+services/scribe/.venv/
+
+# Docker
+.docker/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Devbox
+.devbox/
+
+# Observability data (local)
+observability/grafana/data/
+observability/prometheus/data/
+observability/loki/data/

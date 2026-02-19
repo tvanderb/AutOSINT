@@ -1,0 +1,6 @@
+[project]
+name = "autosint-scribe"
+version = "0.1.0"
+description = "AutOSINT multimedia transcription service (Whisper + diarization)"
+requires-python = ">=3.12"
+dependencies = []

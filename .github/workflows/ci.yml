@@ -1,0 +1,151 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── Rust: fmt, clippy, unit tests, release build ──
+  # Always runs full workspace — a change to common can break downstream crates.
+  rust:
+    name: Rust checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy lints
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: Unit tests
+        run: cargo test --workspace
+
+      - name: Release build
+        run: cargo build --release --workspace
+
+  # ── Integration tests against real databases ──
+  # Runs on PRs and merges to main. Uses service containers pinned
+  # to the same versions as docker-compose.yml.
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+
+    services:
+      neo4j:
+        image: neo4j:5.26-community
+        ports:
+          - 7687:7687
+        env:
+          NEO4J_AUTH: neo4j/autosint_test
+        options: >-
+          --health-cmd "cypher-shell -u neo4j -p autosint_test 'RETURN 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 30s
+
+      postgres:
+        image: pgvector/pgvector:pg17
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: autosint
+          POSTGRES_PASSWORD: autosint_test
+          POSTGRES_DB: autosint_test
+        options: >-
+          --health-cmd "pg_isready -U autosint"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+          --health-start-period 10s
+
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+          --health-start-period 5s
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-integ-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-integ-
+
+      - name: Run integration tests
+        env:
+          NEO4J_URI: bolt://localhost:7687
+          NEO4J_USER: neo4j
+          NEO4J_PASSWORD: autosint_test
+          DATABASE_URL: postgres://autosint:autosint_test@localhost:5432/autosint_test
+          REDIS_URL: redis://localhost:6379
+        run: cargo test --workspace -- --ignored
+
+  # ── Node.js: fetch-browser sidecar ──
+  # Skeleton — will gain real checks in M5.
+  nodejs:
+    name: Node.js checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/fetch-browser
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install and check
+        run: npm ci 2>/dev/null || echo "Skeleton — no package-lock.json yet"
+
+  # ── Python: Scribe ──
+  # Skeleton — will gain real checks in M5.
+  python:
+    name: Python checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/scribe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install and check
+        run: pip install -r requirements.txt 2>/dev/null || echo "Skeleton — no requirements.txt yet"

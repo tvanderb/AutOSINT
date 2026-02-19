@@ -1,0 +1,10 @@
+{
+  "name": "autosint-fetch-browser",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AutOSINT Fetch browser automation sidecar (Playwright)",
+  "scripts": {
+    "start": "echo 'Not yet implemented'",
+    "test": "echo 'No tests yet'"
+  }
+}

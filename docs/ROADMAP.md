@@ -18,117 +18,117 @@ Everything else depends on this. No intelligence logic — pure infrastructure.
 
 > Review: [PLAN.md §10 Tech Stack — Project Structure](./PLAN.md#project-structure)
 
-- [ ] Cargo workspace root (`Cargo.toml` with workspace members)
-- [ ] `crates/common/` — `autosint-common` crate skeleton
-- [ ] `crates/engine/` — `autosint-engine` crate skeleton with internal module structure (`orchestrator/`, `analyst/`, `processor/`, `tools/`, `llm/`, `graph/`, `store/`, `queue/`, `config/`)
-- [ ] `crates/fetch/` — `autosint-fetch` crate skeleton
-- [ ] `crates/geo/` — `autosint-geo` crate skeleton
-- [ ] `services/fetch-browser/` — Node.js project skeleton (package.json, tsconfig)
-- [ ] `services/scribe/` — Python project skeleton (pyproject.toml or requirements.txt)
-- [ ] `.gitignore` covering Rust, Node.js, Python, Docker, IDE files, `.claude_context`
-- [ ] Workspace compiles clean (`cargo build` succeeds)
+- [x] Cargo workspace root (`Cargo.toml` with workspace members)
+- [x] `crates/common/` — `autosint-common` crate skeleton
+- [x] `crates/engine/` — `autosint-engine` crate skeleton with internal module structure (`orchestrator/`, `analyst/`, `processor/`, `tools/`, `llm/`, `graph/`, `store/`, `queue/`, `config/`)
+- [x] `crates/fetch/` — `autosint-fetch` crate skeleton
+- [x] `crates/geo/` — `autosint-geo` crate skeleton
+- [x] `services/fetch-browser/` — Node.js project skeleton (package.json, tsconfig)
+- [x] `services/scribe/` — Python project skeleton (pyproject.toml or requirements.txt)
+- [x] `.gitignore` covering Rust, Node.js, Python, Docker, IDE files, `.claude_context`
+- [x] Workspace compiles clean (`cargo build` succeeds)
 
 ### Shared Types (`autosint-common`)
 
 > Review: [PLAN.md §4.3 Storage Primitives](./PLAN.md#43-storage-primitives), [§4.4 Database Schemas](./PLAN.md#44-database-schemas), [§9 External Module Pattern](./PLAN.md#9-external-module-pattern)
 
-- [ ] Entity type (ID, canonical_name, aliases, kind, summary, is_stub, last_updated, freeform properties)
-- [ ] Claim type (ID, content, published_timestamp, ingested_timestamp, raw_source_link, attribution_depth)
-- [ ] Relationship type (ID, description, weight, confidence, bidirectional, timestamp)
-- [ ] Assessment type (ID, investigation_id, content, confidence, entity_refs, claim_refs)
-- [ ] Investigation type (ID, prompt, status enum, parent_investigation_id, cycle_count, timestamps)
-- [ ] Work order type (ID, investigation_id, objective, status enum, priority, referenced_entities, source_guidance)
-- [ ] API contract types for Fetch (request/response schemas for `/fetch`, `/browse`, `/sources`)
-- [ ] API contract types for Geo (request/response schemas for `/context`, `/spatial/*`, `/terrain`, etc.)
-- [ ] API contract types for Scribe (request/response schemas for `/transcribe`)
-- [ ] Common error types
-- [ ] Common identifier types (UUIDs, entity refs)
+- [x] Entity type (ID, canonical_name, aliases, kind, summary, is_stub, last_updated, freeform properties)
+- [x] Claim type (ID, content, published_timestamp, ingested_timestamp, raw_source_link, attribution_depth)
+- [x] Relationship type (ID, description, weight, confidence, bidirectional, timestamp)
+- [x] Assessment type (ID, investigation_id, content, confidence, entity_refs, claim_refs)
+- [x] Investigation type (ID, prompt, status enum, parent_investigation_id, cycle_count, timestamps)
+- [x] Work order type (ID, investigation_id, objective, status enum, priority, referenced_entities, source_guidance)
+- [x] API contract types for Fetch (request/response schemas for `/fetch`, `/browse`, `/sources`)
+- [x] API contract types for Geo (request/response schemas for `/context`, `/spatial/*`, `/terrain`, etc.)
+- [x] API contract types for Scribe (request/response schemas for `/transcribe`)
+- [x] Common error types
+- [x] Common identifier types (UUIDs, entity refs)
 
 ### Config System
 
 > Review: [PLAN.md §2 Core Design Philosophy — All Numeric Parameters are Runtime-Configurable](./PLAN.md#all-numeric-parameters-are-runtime-configurable), [§4.9 Tool Layer — Tool Definitions in Config](./PLAN.md#tool-definitions-in-config)
 
-- [ ] `config/` directory structure: `config/prompts/`, `config/tools/analyst/`, `config/tools/processor/`, `config/system.toml`
-- [ ] Config loading module in Engine (`crates/engine/src/config/`)
-- [ ] `system.toml` with all numeric parameters: safety limits, concurrency, timeouts, retry config, embedding config, LLM provider/model config
-- [ ] Config structs in `autosint-common` (deserialized via serde from TOML)
-- [ ] Tool schema loading from JSON files (deferred: actual tool schemas written in M3/M4)
-- [ ] Prompt template loading from text files (deferred: actual prompts written in M3/M4)
-- [ ] Validation on load (required fields, sane ranges) — **Engine refuses to start on validation failure** with clear error messages
+- [x] `config/` directory structure: `config/prompts/`, `config/tools/analyst/`, `config/tools/processor/`, `config/system.toml`
+- [x] Config loading module in Engine (`crates/engine/src/config/`)
+- [x] `system.toml` with all numeric parameters: safety limits, concurrency, timeouts, retry config, embedding config, LLM provider/model config
+- [x] Config structs in `autosint-common` (deserialized via serde from TOML)
+- [x] Tool schema loading from JSON files (deferred: actual tool schemas written in M3/M4)
+- [x] Prompt template loading from text files (deferred: actual prompts written in M3/M4)
+- [x] Validation on load (required fields, sane ranges) — **Engine refuses to start on validation failure** with clear error messages
 - [ ] Cross-validation: tool schemas reference only registered handlers, all prompt files exist, no orphaned config
 
 ### Database Clients
 
 > Review: [PLAN.md §4.4 Database Schemas](./PLAN.md#44-database-schemas), [§10 Tech Stack — Key Rust Crates](./PLAN.md#key-rust-crates)
 
-- [ ] Neo4j client module (`crates/engine/src/graph/`) using `neo4rs`
-  - [ ] Connection pool initialization
-  - [ ] Health check query
-  - [ ] Schema initialization (indexes, constraints) — run on startup
-- [ ] PostgreSQL client module (`crates/engine/src/store/`) using `sqlx`
-  - [ ] Connection pool initialization
-  - [ ] Health check query
-  - [ ] Migration system (sqlx migrations)
-  - [ ] Initial migration: `investigations`, `work_orders`, `assessments` tables per PLAN.md schema
-  - [ ] pgvector extension enabled
-- [ ] Redis client module (`crates/engine/src/queue/`) using `redis-rs`
-  - [ ] Connection initialization
-  - [ ] Health check (PING)
-  - [ ] Stream and consumer group creation for work order queues (`workorders:high`, `workorders:normal`, `workorders:low`)
+- [x] Neo4j client module (`crates/engine/src/graph/`) using `neo4rs`
+  - [x] Connection pool initialization
+  - [x] Health check query
+  - [x] Schema initialization (indexes, constraints) — run on startup — 14 indexes (2 uniqueness constraints, 4 range, 3 fulltext, 3 vector incl. relationship vector)
+- [x] PostgreSQL client module (`crates/engine/src/store/`) using `sqlx`
+  - [x] Connection pool initialization
+  - [x] Health check query
+  - [x] Migration system (sqlx migrations)
+  - [x] Initial migration: `investigations`, `work_orders`, `assessments` tables per PLAN.md schema (+ SUSPENDED columns on investigations)
+  - [x] pgvector extension enabled, vector(1536) column on assessments, ivfflat index
+- [x] Redis client module (`crates/engine/src/queue/`) using `redis-rs`
+  - [x] Connection initialization
+  - [x] Health check (PING)
+  - [x] Stream and consumer group creation for work order queues (`workorders:high`, `workorders:normal`, `workorders:low`)
 
 ### Docker Compose
 
 > Review: [PLAN.md §13 Deployment — Stage 1: Local Development](./PLAN.md#stage-1-local-development-docker-compose)
 
-- [ ] `docker-compose.yml` with core services:
-  - [ ] Neo4j (pinned version 5.18+, named volume, health check)
-  - [ ] PostgreSQL + pgvector (pinned version, named volume, health check)
-  - [ ] Redis (pinned version, named volume, health check)
-  - [ ] Engine (Dockerfile, depends_on with health checks)
-  - [ ] Fetch (Dockerfile, depends_on)
-  - [ ] Geo (Dockerfile, depends_on)
-- [ ] Docker Compose profiles:
-  - [ ] Default: core services (Engine, Fetch, Geo, databases)
-  - [ ] `full`: adds fetch-browser sidecar, Scribe
-  - [ ] `observability`: adds Grafana, Prometheus, Loki
-- [ ] `config/` directory volume-mounted into Engine container
-- [ ] Named volumes for all database persistence
-- [ ] Dockerfiles:
-  - [ ] Engine (multi-stage Rust build)
-  - [ ] Fetch (multi-stage Rust build, shares base with Engine)
-  - [ ] Geo (multi-stage Rust build)
-  - [ ] fetch-browser (Node.js + Playwright — skeleton only, built out in M5)
-  - [ ] Scribe (Python + Whisper — skeleton only, built out in M5)
-- [ ] `docker compose up` starts core services, all healthy
+- [x] `docker-compose.yml` with core services:
+  - [x] Neo4j (pinned version 5.18+, named volume, health check) — Neo4j 5.26.21
+  - [x] PostgreSQL + pgvector (pinned version, named volume, health check) — PG 17.8 + pgvector 0.8.1
+  - [x] Redis (pinned version, named volume, health check) — Redis 7.4.7
+  - [x] Engine (Dockerfile, depends_on with health checks)
+  - [x] Fetch (Dockerfile, depends_on)
+  - [x] Geo (Dockerfile, depends_on)
+- [x] Docker Compose profiles:
+  - [x] Default: core services (Engine, Fetch, Geo, databases)
+  - [x] `full`: adds fetch-browser sidecar, Scribe
+  - [x] `observability`: adds Grafana, Prometheus, Loki
+- [x] `config/` directory volume-mounted into Engine container
+- [x] Named volumes for all database persistence
+- [x] Dockerfiles:
+  - [x] Engine (multi-stage Rust build via shared `Dockerfile.rust`)
+  - [x] Fetch (multi-stage Rust build via shared `Dockerfile.rust`)
+  - [x] Geo (multi-stage Rust build via shared `Dockerfile.rust`)
+  - [x] fetch-browser (Node.js + Playwright — skeleton only, built out in M5)
+  - [x] Scribe (Python + Whisper — skeleton only, built out in M5)
+- [x] `docker compose up` starts core services, all healthy
 
 ### CI Pipeline
 
 > Review: [PLAN.md §12 CI & Testing](./PLAN.md#12-ci--testing)
 
-- [ ] GitHub Actions workflow (`.github/workflows/ci.yml`)
-- [ ] Path-filtered triggers:
-  - [ ] Rust workspace: `crates/**`, `Cargo.*`
-  - [ ] Node.js: `services/fetch-browser/**`
-  - [ ] Python: `services/scribe/**`
-- [ ] Rust checks: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test --workspace`, `cargo build --release`
-- [ ] Service containers for integration tests (Neo4j, PostgreSQL, Redis — pinned versions matching docker-compose.yml)
-- [ ] Integration test job (separate from unit tests, runs only on PR and merge to main)
-- [ ] Merge gate: all relevant checks must pass
+- [x] GitHub Actions workflow (`.github/workflows/ci.yml`)
+- [x] Path-filtered triggers (all jobs run on push/PR; path filtering deferred to when Node.js/Python have real code):
+  - [x] Rust workspace: fmt, clippy, test, build release
+  - [x] Node.js: skeleton check
+  - [x] Python: skeleton check
+- [x] Rust checks: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test --workspace`, `cargo build --release`
+- [x] Service containers for integration tests (Neo4j 5.26, pgvector/pg17, Redis 7.4 — matching docker-compose.yml)
+- [x] Integration test job (separate from unit tests, runs `cargo test -- --ignored`)
+- [x] Merge gate: all jobs required to pass
 
 ### Observability Foundation
 
 > Review: [PLAN.md §2 Core Design Philosophy — Observability is Built In](./PLAN.md#observability-is-built-in-not-added-later)
 
-- [ ] `tracing` crate setup in all Rust services (Engine, Fetch, Geo)
-  - [ ] JSON-structured log output
-  - [ ] `investigation_id` as correlation key in spans
-  - [ ] Log level configuration via environment variable
-- [ ] `/health` endpoint on every Rust service (axum)
-- [ ] `/metrics` endpoint skeleton on every Rust service (Prometheus format)
-- [ ] Observability container configs (skeleton, fleshed out in M6):
-  - [ ] `observability/prometheus/prometheus.yml` — scrape targets
-  - [ ] `observability/grafana/` — datasource config pointing to Prometheus and Loki
-  - [ ] `observability/loki/` — basic config
+- [x] `tracing` crate setup in all Rust services (Engine, Fetch, Geo)
+  - [x] JSON-structured log output
+  - [x] `investigation_id` as correlation key in spans (pattern established; wired per-investigation in M4)
+  - [x] Log level configuration via environment variable (`RUST_LOG`)
+- [x] `/health` endpoint on every Rust service (axum) — Engine checks all 3 databases, Fetch/Geo return simple healthy
+- [x] `/metrics` endpoint skeleton on every Rust service (Prometheus format via `metrics-exporter-prometheus`)
+- [x] Observability container configs (skeleton, fleshed out in M6):
+  - [x] `observability/prometheus/prometheus.yml` — scrape targets for Engine, Fetch, Geo
+  - [x] `observability/grafana/` — datasource config pointing to Prometheus and Loki
+  - [x] `observability/loki/` — basic config
 
 ---
 

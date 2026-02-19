@@ -1,0 +1,61 @@
+# AutOSINT System Configuration
+# All numeric parameters are runtime-configurable (PLAN.md §2).
+# Edit this file and restart the Engine — no recompile needed.
+
+[safety]
+max_cycles_per_investigation = 10
+max_turns_per_analyst_session = 50
+max_work_orders_per_cycle = 20
+heartbeat_ttl_seconds = 60
+consecutive_all_fail_limit = 2
+max_consecutive_malformed_tool_calls = 3
+
+[concurrency]
+processor_pool_size = 4
+browser_context_cap = 6
+
+[llm.analyst]
+provider = "anthropic"
+model = "claude-opus-4-20250514"
+max_tokens = 8192
+
+[llm.processor]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+max_tokens = 8192
+
+[embeddings]
+provider = "openai"
+model = "text-embedding-3-small"
+dimensions = 1536
+batch_size = 100
+backfill_interval_minutes = 5
+
+[retry.llm_api]
+max_attempts = 3
+initial_backoff_ms = 1000
+max_backoff_ms = 30000
+backoff_multiplier = 2.0
+jitter = true
+
+[retry.databases]
+max_attempts = 3
+initial_backoff_ms = 500
+max_backoff_ms = 10000
+backoff_multiplier = 2.0
+jitter = true
+
+[retry.external_modules]
+max_attempts = 2
+initial_backoff_ms = 1000
+max_backoff_ms = 5000
+backoff_multiplier = 2.0
+jitter = true
+
+[cache]
+fetch_ttl_seconds = 3600
+
+[tool_results]
+max_search_results = 20
+max_entity_detail_chars = 10000
+max_claim_preview_chars = 500
