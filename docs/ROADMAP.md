@@ -142,104 +142,104 @@ This is the foundation the entire system reasons over. Every subsequent mileston
 
 > Review: [PLAN.md §4.4 Neo4j Knowledge Graph Schema](./PLAN.md#neo4j-knowledge-graph-schema)
 
-- [ ] Schema initialization on Engine startup:
-  - [ ] Entity node constraints (uniqueness on `id`)
-  - [ ] Claim node constraints (uniqueness on `id`)
-  - [ ] Full-text index on Entity (`canonical_name`, `aliases`)
-  - [ ] Vector index on Entity (`embedding`)
-  - [ ] Range index on Entity (`kind`)
-  - [ ] Range index on Entity (`last_updated`)
-  - [ ] Full-text index on Claim (`content`)
-  - [ ] Vector index on Claim (`embedding`)
-  - [ ] Range index on Claim (`published_timestamp`)
-  - [ ] Range index on Claim (`ingested_timestamp`)
-  - [ ] Full-text index on RELATES_TO (`description`)
-  - [ ] Vector index on RELATES_TO (`embedding`) — requires Neo4j 5.18+
-- [ ] Verify all indexes created successfully on startup (log warnings on failure)
+- [x] Schema initialization on Engine startup:
+  - [x] Entity node constraints (uniqueness on `id`)
+  - [x] Claim node constraints (uniqueness on `id`)
+  - [x] Full-text index on Entity (`canonical_name`, `aliases`)
+  - [x] Vector index on Entity (`embedding`)
+  - [x] Range index on Entity (`kind`)
+  - [x] Range index on Entity (`last_updated`)
+  - [x] Full-text index on Claim (`content`)
+  - [x] Vector index on Claim (`embedding`)
+  - [x] Range index on Claim (`published_timestamp`)
+  - [x] Range index on Claim (`ingested_timestamp`)
+  - [x] Full-text index on RELATES_TO (`description`)
+  - [x] Vector index on RELATES_TO (`embedding`) — requires Neo4j 5.18+
+- [x] Verify all indexes created successfully on startup (log warnings on failure)
 
 ### Entity Operations
 
 > Review: [PLAN.md §4.3 Entities](./PLAN.md#entities-in-knowledge-graph), [§4.8 Search & Retrieval](./PLAN.md#48-search--retrieval)
 
-- [ ] `create_entity` — write node with all required fields, compute embedding (name + summary), store freeform properties as node properties
-- [ ] `get_entity` — retrieve by ID with all properties
-- [ ] `update_entity` — update specified fields, recompute embedding if name/summary changed, update `last_updated`
-- [ ] `search_entities` — semantic/vector search (query → embed → vector similarity)
-- [ ] `search_entities` — full-text/keyword search (name, aliases)
-- [ ] `search_entities` — filtered by `kind`, temporal range on `last_updated`
-- [ ] Stub entity support: `is_stub` flag, create stubs with minimal data
-- [ ] External identifier storage (wikidata_qid, stock_ticker, iso_code, etc. as node properties)
-- [ ] `merge_entities` — merge source entity into target: reassign all PUBLISHED/REFERENCES edges from claims, reassign all RELATES_TO edges (both directions), combine aliases, delete source entity, log merge event for audit
+- [x] `create_entity` — write node with all required fields, compute embedding (name + summary), store freeform properties as node properties
+- [x] `get_entity` — retrieve by ID with all properties
+- [x] `update_entity` — update specified fields, recompute embedding if name/summary changed, update `last_updated`
+- [x] `search_entities` — semantic/vector search (query → embed → vector similarity)
+- [x] `search_entities` — full-text/keyword search (name, aliases)
+- [x] `search_entities` — filtered by `kind`, temporal range on `last_updated`
+- [x] Stub entity support: `is_stub` flag, create stubs with minimal data
+- [x] External identifier storage (wikidata_qid, stock_ticker, iso_code, etc. as node properties)
+- [x] `merge_entities` — merge source entity into target: reassign all PUBLISHED/REFERENCES edges from claims, reassign all RELATES_TO edges (both directions), combine aliases, delete source entity, log merge event for audit
 
 ### Claim Operations
 
 > Review: [PLAN.md §4.3 Claims](./PLAN.md#claims-in-knowledge-graph)
 
-- [ ] `create_claim` — write node, compute embedding (content), create PUBLISHED edge from source entity, create REFERENCES edges to referenced entities
-- [ ] `search_claims` — semantic/vector search
-- [ ] `search_claims` — keyword/full-text search
-- [ ] `search_claims` — temporal filtering (`published_after`, `published_before`, sort by `published_timestamp`)
-- [ ] `search_claims` — by referenced entity ID
-- [ ] `search_claims` — by source entity ID
-- [ ] `search_claims` — by attribution depth (primary/secondhand)
+- [x] `create_claim` — write node, compute embedding (content), create PUBLISHED edge from source entity, create REFERENCES edges to referenced entities
+- [x] `search_claims` — semantic/vector search
+- [x] `search_claims` — keyword/full-text search
+- [x] `search_claims` — temporal filtering (`published_after`, `published_before`, sort by `published_timestamp`)
+- [x] `search_claims` — by referenced entity ID
+- [x] `search_claims` — by source entity ID
+- [x] `search_claims` — by attribution depth (primary/secondhand)
 
 ### Relationship Operations
 
 > Review: [PLAN.md §4.3 Relationships](./PLAN.md#relationships-in-knowledge-graph)
 
-- [ ] `create_relationship` — write RELATES_TO edge with properties, compute embedding (description)
-- [ ] `update_relationship` — update specified properties, recompute embedding if description changed
-- [ ] `traverse_relationships` — from entity ID, with optional direction filter, description query (semantic), min_weight filter, limit
-- [ ] `search_relationships` — semantic search across all relationships
-- [ ] Bidirectional relationship handling: store one edge with `bidirectional: true`, query tools traverse both directions
+- [x] `create_relationship` — write RELATES_TO edge with properties, compute embedding (description)
+- [x] `update_relationship` — update specified properties, recompute embedding if description changed
+- [x] `traverse_relationships` — from entity ID, with optional direction filter, description query (semantic), min_weight filter, limit
+- [x] `search_relationships` — semantic search across all relationships
+- [x] Bidirectional relationship handling: store one edge with `bidirectional: true`, query tools traverse both directions
 
 ### Embedding Pipeline
 
 > Review: [PLAN.md §11 Error Handling — Embedding Pipeline](./PLAN.md#embedding-pipeline)
 
-- [ ] Embedding API client (OpenAI `text-embedding-3-small` initially)
-  - [ ] Single text embedding
-  - [ ] Batch embedding (multiple texts in one API call)
-  - [ ] Configurable provider, model, dimensions, batch_size from `system.toml`
-- [ ] Normal flow: collect texts → batch embed → write to Neo4j with embeddings in single transaction
-- [ ] Failure flow: write without embeddings, flag `embedding_pending: true`
-- [ ] Background backfill task: periodic query for `embedding_pending: true`, compute embeddings, update records
-  - [ ] Configurable interval from `system.toml`
-- [ ] Retry logic on embedding API calls (per retry config)
+- [x] Embedding API client (OpenAI `text-embedding-3-small` initially)
+  - [x] Single text embedding
+  - [x] Batch embedding (multiple texts in one API call)
+  - [x] Configurable provider, model, dimensions, batch_size from `system.toml`
+- [x] Normal flow: collect texts → batch embed → write to Neo4j with embeddings in single transaction
+- [x] Failure flow: write without embeddings, flag `embedding_pending: true`
+- [x] Background backfill task: periodic query for `embedding_pending: true`, compute embeddings, update records
+  - [x] Configurable interval from `system.toml`
+- [x] Retry logic on embedding API calls (per retry config)
 
 ### Entity Deduplication
 
 > Review: [PLAN.md §4.3 Entities — Deduplication](./PLAN.md#entities-in-knowledge-graph)
 
-- [ ] Stage 1: exact string matching on canonical_name and aliases
-- [ ] Stage 2: fuzzy string matching (edit distance / Jaro-Winkler)
-- [ ] Stage 3: embedding similarity (compare candidate embedding against existing entity embeddings)
-- [ ] Stage 4 interface: LLM judgment for ambiguous cases (implementation deferred to M3 when LLM client exists, but define the interface/trait now)
-- [ ] Cascading pipeline: fast stages filter, expensive stages only for uncertain matches
-- [ ] Dedup function returns: exact match, probable match (with confidence), no match
+- [x] Stage 1: exact string matching on canonical_name and aliases
+- [x] Stage 2: fuzzy string matching (edit distance / Jaro-Winkler)
+- [x] Stage 3: embedding similarity (compare candidate embedding against existing entity embeddings)
+- [x] Stage 4 interface: LLM judgment for ambiguous cases (implementation deferred to M3 when LLM client exists, but define the interface/trait now)
+- [x] Cascading pipeline: fast stages filter, expensive stages only for uncertain matches
+- [x] Dedup function returns: exact match, probable match (with confidence), no match
 
 ### Integration Tests
 
 > Review: [PLAN.md §12 CI & Testing — Integration Tests](./PLAN.md#integration-tests)
 
-- [ ] Test harness: spin up Neo4j test container (or use CI service container), seed and tear down per test
-- [ ] Entity CRUD tests (create, read, update, search all modes)
-- [ ] Claim CRUD tests (create, search with temporal filters, attribution depth filter)
-- [ ] Relationship CRUD tests (create, traverse, search, bidirectional handling)
-- [ ] Vector search accuracy tests (create entities with known content, verify semantic search returns expected results)
-- [ ] Full-text search tests (exact name, alias, partial match)
-- [ ] Multi-hop traversal test (A→B→C, query from A with depth 2)
-- [ ] Embedding pipeline tests (batch embed, write, verify searchable)
-- [ ] `embedding_pending` backfill test (write without embedding, run backfill, verify searchable)
-- [ ] Entity merge test (create two entities with claims and relationships, merge, verify all edges reassigned, source deleted, aliases combined)
+- [x] Test harness: spin up Neo4j test container (or use CI service container), seed and tear down per test
+- [x] Entity CRUD tests (create, read, update, search all modes)
+- [x] Claim CRUD tests (create, search with temporal filters, attribution depth filter)
+- [x] Relationship CRUD tests (create, traverse, search, bidirectional handling)
+- [x] Vector search accuracy tests (create entities with known content, verify semantic search returns expected results)
+- [x] Full-text search tests (exact name, alias, partial match)
+- [ ] Multi-hop traversal test (A→B→C, query from A with depth 2) — deferred: single-hop traverse implemented; multi-hop requires application-level iteration
+- [x] Embedding pipeline tests (batch embed, write, verify searchable)
+- [x] `embedding_pending` backfill test (write without embedding, run backfill, verify searchable)
+- [x] Entity merge test (create two entities with claims and relationships, merge, verify all edges reassigned, source deleted, aliases combined)
 
 ### Observability
 
-- [ ] Graph query latency metrics (histogram per operation type)
-- [ ] Embedding API call metrics (latency, tokens, errors)
-- [ ] Entity/claim/relationship count metrics (gauges)
-- [ ] Embedding backfill queue depth metric
-- [ ] Entity dedup metrics: dedup stage hit rates (string/embedding/LLM), false positive count (tracked via `merge_entities` calls — each merge implies a prior dedup failure), entity merge count
+- [x] Graph query latency metrics (histogram per operation type)
+- [x] Embedding API call metrics (latency, tokens, errors)
+- [ ] Entity/claim/relationship count metrics (gauges) — deferred: requires periodic count queries; add when dashboards are built (M6)
+- [x] Embedding backfill queue depth metric
+- [x] Entity dedup metrics: dedup stage hit rates (string/embedding/LLM), false positive count (tracked via `merge_entities` calls — each merge implies a prior dedup failure), entity merge count
 
 ---
 

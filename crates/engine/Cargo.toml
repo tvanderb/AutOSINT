@@ -21,3 +21,4 @@ sqlx.workspace = true
 redis.workspace = true
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
+strsim.workspace = true

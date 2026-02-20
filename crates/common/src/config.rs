@@ -7,6 +7,7 @@ pub struct SystemConfig {
     pub concurrency: ConcurrencyConfig,
     pub llm: LlmConfig,
     pub embeddings: EmbeddingConfig,
+    pub dedup: DedupConfig,
     pub retry: RetryDefaults,
     pub cache: CacheConfig,
     pub tool_results: ToolResultLimits,
@@ -72,6 +73,15 @@ pub struct EmbeddingConfig {
     pub batch_size: u32,
     /// Interval in minutes for background backfill of pending embeddings.
     pub backfill_interval_minutes: u32,
+}
+
+/// Entity deduplication thresholds.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DedupConfig {
+    /// Jaro-Winkler similarity threshold for fuzzy string matching (0.0–1.0).
+    pub fuzzy_threshold: f64,
+    /// Cosine similarity threshold for embedding-based matching (0.0–1.0).
+    pub embedding_threshold: f64,
 }
 
 /// Default retry parameters per PLAN.md §11.

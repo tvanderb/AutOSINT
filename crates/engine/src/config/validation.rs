@@ -12,6 +12,7 @@ pub fn validate(config: &EngineConfig) -> Result<(), ConfigError> {
     validate_concurrency(config, &mut errors);
     validate_llm(config, &mut errors);
     validate_embeddings(config, &mut errors);
+    validate_dedup(config, &mut errors);
     validate_retry(config, &mut errors);
 
     if errors.is_empty() {
@@ -95,6 +96,17 @@ fn validate_embeddings(config: &EngineConfig, errors: &mut Vec<String>) {
     }
     if e.batch_size == 0 {
         errors.push("embeddings.batch_size must be > 0".into());
+    }
+}
+
+fn validate_dedup(config: &EngineConfig, errors: &mut Vec<String>) {
+    let d = &config.system.dedup;
+
+    if !(0.0..=1.0).contains(&d.fuzzy_threshold) {
+        errors.push("dedup.fuzzy_threshold must be between 0.0 and 1.0".into());
+    }
+    if !(0.0..=1.0).contains(&d.embedding_threshold) {
+        errors.push("dedup.embedding_threshold must be between 0.0 and 1.0".into());
     }
 }
 

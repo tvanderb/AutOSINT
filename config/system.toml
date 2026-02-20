@@ -31,6 +31,10 @@ dimensions = 1536
 batch_size = 100
 backfill_interval_minutes = 5
 
+[dedup]
+fuzzy_threshold = 0.85
+embedding_threshold = 0.90
+
 [retry.llm_api]
 max_attempts = 3
 initial_backoff_ms = 1000

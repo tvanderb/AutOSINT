@@ -1,3 +1,22 @@
+mod claims;
+pub(crate) mod conversions;
+pub mod dedup;
+mod entities;
+mod relationships;
+mod search;
+
+// Re-exports for use by other engine modules.
+#[allow(unused_imports)]
+pub use dedup::{DedupResult, DedupStage};
+#[allow(unused_imports)]
+pub use entities::EntityUpdate;
+#[allow(unused_imports)]
+pub use relationships::{RelationshipUpdate, TraversalDirection, TraversalParams};
+#[allow(unused_imports)]
+pub use search::{
+    ClaimSearchParams, EntitySearchParams, RelationshipSearchParams, SearchMode, SearchResult,
+};
+
 use neo4rs::{query, Graph};
 
 /// Neo4j client wrapping a connection pool.
@@ -63,8 +82,6 @@ impl GraphClient {
         }
 
         // Vector indexes — Neo4j 5.x uses CREATE VECTOR INDEX syntax.
-        // Node vector indexes: CREATE VECTOR INDEX ... FOR (n:Label) ON (n.prop)
-        // Relationship vector indexes (5.18+): CREATE VECTOR INDEX ... FOR ()-[r:TYPE]-() ON (r.prop)
         let vector_indexes = [
             "CREATE VECTOR INDEX entity_embedding IF NOT EXISTS FOR (e:Entity) ON (e.embedding) OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}}",
             "CREATE VECTOR INDEX claim_embedding IF NOT EXISTS FOR (c:Claim) ON (c.embedding) OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}}",
@@ -74,7 +91,6 @@ impl GraphClient {
         for stmt in &vector_indexes {
             if let Err(e) = self.graph.run(query(stmt)).await {
                 let err_str = e.to_string();
-                // "EquivalentSchemaRuleAlreadyExists" is expected on restart
                 if err_str.contains("already exists") || err_str.contains("EquivalentSchema") {
                     tracing::debug!(statement = *stmt, "Vector index already exists, skipping");
                 } else {
@@ -105,10 +121,16 @@ pub enum GraphError {
 
     #[error("Neo4j query error: {0}")]
     Query(String),
+
+    #[error("Not found: {0}")]
+    NotFound(String),
 }
 
 impl From<GraphError> for autosint_common::AutOsintError {
     fn from(e: GraphError) -> Self {
-        autosint_common::AutOsintError::Neo4j(e.to_string())
+        match &e {
+            GraphError::NotFound(msg) => autosint_common::AutOsintError::NotFound(msg.clone()),
+            _ => autosint_common::AutOsintError::Neo4j(e.to_string()),
+        }
     }
 }
