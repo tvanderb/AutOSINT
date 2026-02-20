@@ -31,6 +31,9 @@ fn validate_safety_limits(config: &EngineConfig, errors: &mut Vec<String>) {
     if s.max_turns_per_analyst_session == 0 {
         errors.push("safety.max_turns_per_analyst_session must be > 0".into());
     }
+    if s.max_turns_per_processor_session == 0 {
+        errors.push("safety.max_turns_per_processor_session must be > 0".into());
+    }
     if s.max_work_orders_per_cycle == 0 {
         errors.push("safety.max_work_orders_per_cycle must be > 0".into());
     }

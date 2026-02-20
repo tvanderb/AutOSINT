@@ -1,0 +1,36 @@
+{
+  "name": "create_claim",
+  "description": "Create a new claim (unit of information) in the knowledge graph. Claims are extracted facts, not raw text. Scale with information density — a single article may yield many claims.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "content": {
+        "type": "string",
+        "description": "The information content of the claim. Should be a self-contained factual statement."
+      },
+      "source_entity_id": {
+        "type": "string",
+        "description": "UUID of the source entity (publication/outlet) that published this information."
+      },
+      "published_timestamp": {
+        "type": "string",
+        "description": "When the information was published (RFC3339 format, e.g. '2024-01-15T00:00:00Z')."
+      },
+      "attribution_depth": {
+        "type": "string",
+        "enum": ["primary", "secondhand"],
+        "description": "'primary' if from the direct source (filing, statement, data). 'secondhand' if reported by an intermediary. Default: 'secondhand'."
+      },
+      "referenced_entity_ids": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "UUIDs of entities this claim is about."
+      },
+      "raw_source_link": {
+        "type": "string",
+        "description": "URL of the original document."
+      }
+    },
+    "required": ["content", "source_entity_id", "published_timestamp"]
+  }
+}

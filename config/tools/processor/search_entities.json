@@ -1,0 +1,27 @@
+{
+  "name": "search_entities",
+  "description": "Search the knowledge graph for entities by name, alias, or semantic similarity. Always search before creating to avoid duplicates.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Search query — entity name, alias, or descriptive text for semantic search."
+      },
+      "mode": {
+        "type": "string",
+        "enum": ["semantic", "keyword"],
+        "description": "Search mode. 'semantic' uses embedding similarity (default). 'keyword' uses fulltext index on name/aliases."
+      },
+      "kind": {
+        "type": "string",
+        "description": "Filter by entity kind (e.g. 'person', 'organization', 'country')."
+      },
+      "limit": {
+        "type": "integer",
+        "description": "Max results to return (default 20)."
+      }
+    },
+    "required": ["query"]
+  }
+}

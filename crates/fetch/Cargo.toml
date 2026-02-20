@@ -17,3 +17,4 @@ axum.workspace = true
 reqwest.workspace = true
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
+scraper.workspace = true

@@ -1,0 +1,60 @@
+{
+  "name": "update_entity_with_change_claim",
+  "description": "Atomically update an entity AND create a claim recording the change. Use this when the update represents a real-world state change (e.g. CEO changed, company acquired, status updated). The claim documents what changed and when.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "entity_id": {
+        "type": "string",
+        "description": "UUID of the entity to update."
+      },
+      "claim_content": {
+        "type": "string",
+        "description": "Description of what changed (e.g. 'Apple announced Tim Cook will step down as CEO effective March 2025')."
+      },
+      "claim_source_entity_id": {
+        "type": "string",
+        "description": "UUID of the source entity that reported this change."
+      },
+      "claim_published_timestamp": {
+        "type": "string",
+        "description": "When the change was reported (RFC3339)."
+      },
+      "claim_attribution_depth": {
+        "type": "string",
+        "enum": ["primary", "secondhand"],
+        "description": "Attribution depth of the change claim. Default: 'secondhand'."
+      },
+      "claim_raw_source_link": {
+        "type": "string",
+        "description": "URL of the source document."
+      },
+      "canonical_name": {
+        "type": "string",
+        "description": "Updated canonical name."
+      },
+      "kind": {
+        "type": "string",
+        "description": "Updated kind."
+      },
+      "summary": {
+        "type": "string",
+        "description": "Updated summary reflecting the change."
+      },
+      "aliases": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Updated aliases."
+      },
+      "is_stub": {
+        "type": "boolean",
+        "description": "Updated stub status."
+      },
+      "properties": {
+        "type": "object",
+        "description": "Updated properties."
+      }
+    },
+    "required": ["entity_id", "claim_content", "claim_source_entity_id", "claim_published_timestamp"]
+  }
+}

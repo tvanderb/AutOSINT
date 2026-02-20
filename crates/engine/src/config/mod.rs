@@ -1,4 +1,4 @@
 mod loader;
 mod validation;
 
-pub use loader::load_config;
+pub use loader::{load_config, EngineConfig};

@@ -1,11 +1,28 @@
 use std::sync::Arc;
+use std::time::Duration;
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::routing::{get, post};
+use axum::{Json, Router};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use tokio::sync::RwLock;
+
+mod cache;
+mod fetch;
+mod rate_limit;
+mod routes;
+
+use cache::UrlCache;
+use rate_limit::DomainRateLimiter;
 
 /// Shared application state.
-struct AppState {
-    metrics_handle: PrometheusHandle,
+pub struct AppState {
+    pub http: reqwest::Client,
+    pub cache: Arc<RwLock<UrlCache>>,
+    pub rate_limiter: Arc<DomainRateLimiter>,
+    pub metrics_handle: PrometheusHandle,
 }
 
 #[tokio::main]
@@ -25,11 +42,37 @@ async fn main() {
         .install_recorder()
         .expect("Failed to install Prometheus metrics recorder");
 
-    let state = Arc::new(AppState { metrics_handle });
+    // Configure cache TTL from env (default 3600 seconds).
+    let cache_ttl_secs: u64 = std::env::var("FETCH_CACHE_TTL")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(3600);
+
+    // Configure rate limit from env (default 2.0 requests per second per domain).
+    let rate_limit: f64 = std::env::var("FETCH_RATE_LIMIT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(2.0);
+
+    let http = reqwest::Client::builder()
+        .user_agent("AutOSINT-Fetch/0.1")
+        .build()
+        .expect("Failed to build HTTP client");
+
+    let state = Arc::new(AppState {
+        http,
+        cache: Arc::new(RwLock::new(UrlCache::new(Duration::from_secs(
+            cache_ttl_secs,
+        )))),
+        rate_limiter: Arc::new(DomainRateLimiter::new(rate_limit)),
+        metrics_handle,
+    });
 
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/metrics", get(metrics_handler))
+        .route("/fetch", post(routes::fetch_handler))
+        .route("/sources", get(routes::sources_handler))
         .with_state(state);
 
     let port: u16 = std::env::var("FETCH_PORT")

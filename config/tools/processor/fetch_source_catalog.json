@@ -1,0 +1,8 @@
+{
+  "name": "fetch_source_catalog",
+  "description": "List available data sources from the Fetch service. Returns source adapters that can be queried for information (news APIs, RSS feeds, databases, etc.).",
+  "input_schema": {
+    "type": "object",
+    "properties": {}
+  }
+}

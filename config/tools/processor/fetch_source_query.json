@@ -1,0 +1,18 @@
+{
+  "name": "fetch_source_query",
+  "description": "Query a specific data source adapter for information. Use fetch_source_catalog first to see available sources and their capabilities.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "source_id": {
+        "type": "string",
+        "description": "ID of the source adapter to query (from fetch_source_catalog)."
+      },
+      "query": {
+        "type": "string",
+        "description": "Search query for the source."
+      }
+    },
+    "required": ["source_id"]
+  }
+}

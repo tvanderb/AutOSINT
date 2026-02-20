@@ -1,0 +1,38 @@
+{
+  "name": "create_relationship",
+  "description": "Create a directional relationship between two entities in the knowledge graph. Descriptions are freeform natural language, searched semantically.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "source_entity_id": {
+        "type": "string",
+        "description": "UUID of the source entity."
+      },
+      "target_entity_id": {
+        "type": "string",
+        "description": "UUID of the target entity."
+      },
+      "description": {
+        "type": "string",
+        "description": "Natural language description of the relationship (e.g. 'TSMC supplies approximately 40% of Apple's A-series chip production')."
+      },
+      "weight": {
+        "type": "number",
+        "description": "Numeric significance signal (0.0-1.0)."
+      },
+      "confidence": {
+        "type": "number",
+        "description": "How certain the system is about this relationship (0.0-1.0)."
+      },
+      "bidirectional": {
+        "type": "boolean",
+        "description": "Whether this relationship applies in both directions (default false)."
+      },
+      "timestamp": {
+        "type": "string",
+        "description": "When this relationship was established or last confirmed (RFC3339)."
+      }
+    },
+    "required": ["source_entity_id", "target_entity_id", "description"]
+  }
+}

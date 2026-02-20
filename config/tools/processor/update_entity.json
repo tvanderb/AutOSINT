@@ -1,0 +1,39 @@
+{
+  "name": "update_entity",
+  "description": "Update an existing entity's fields. Use update_entity_with_change_claim instead when the update represents a state change that should be recorded as a claim.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "entity_id": {
+        "type": "string",
+        "description": "UUID of the entity to update."
+      },
+      "canonical_name": {
+        "type": "string",
+        "description": "New canonical name."
+      },
+      "kind": {
+        "type": "string",
+        "description": "New kind label."
+      },
+      "summary": {
+        "type": "string",
+        "description": "Updated summary."
+      },
+      "aliases": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Replace the aliases list."
+      },
+      "is_stub": {
+        "type": "boolean",
+        "description": "Update stub status."
+      },
+      "properties": {
+        "type": "object",
+        "description": "Freeform properties to set or update."
+      }
+    },
+    "required": ["entity_id"]
+  }
+}

@@ -7,6 +7,7 @@ use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use autosint_engine::config;
 use autosint_engine::embeddings;
 use autosint_engine::graph;
+use autosint_engine::llm::LlmClient;
 use autosint_engine::queue;
 use autosint_engine::store;
 
@@ -17,6 +18,10 @@ struct AppState {
     queue: queue::QueueClient,
     #[allow(dead_code)]
     embedding_client: Option<Arc<embeddings::EmbeddingClient>>,
+    #[allow(dead_code)]
+    processor_llm: Option<Arc<LlmClient>>,
+    #[allow(dead_code)]
+    engine_config: Arc<config::EngineConfig>,
     metrics_handle: PrometheusHandle,
 }
 
@@ -125,12 +130,29 @@ async fn main() {
         );
     }
 
+    // Processor LLM client (optional — gracefully handle missing API key).
+    let processor_llm = LlmClient::new(
+        engine_config.system.llm.processor.clone(),
+        engine_config.system.retry.llm_api.clone(),
+    )
+    .map(Arc::new);
+
+    if processor_llm.is_some() {
+        tracing::info!("Processor LLM client initialized");
+    } else {
+        tracing::warn!("Processor LLM client not available — API key not set");
+    }
+
+    let engine_config = Arc::new(engine_config);
+
     // Build shared state.
     let state = Arc::new(AppState {
         graph: graph_client,
         store: store_client,
         queue: queue_client,
         embedding_client,
+        processor_llm,
+        engine_config,
         metrics_handle,
     });
 

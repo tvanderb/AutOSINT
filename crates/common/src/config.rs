@@ -20,6 +20,8 @@ pub struct SafetyLimits {
     pub max_cycles_per_investigation: u32,
     /// Max tool calls per Analyst session.
     pub max_turns_per_analyst_session: u32,
+    /// Max tool calls per Processor session.
+    pub max_turns_per_processor_session: u32,
     /// Max work orders an Analyst can create in a single cycle.
     pub max_work_orders_per_cycle: u32,
     /// Heartbeat TTL in seconds. Expired = Processor dead.

@@ -5,6 +5,7 @@
 [safety]
 max_cycles_per_investigation = 10
 max_turns_per_analyst_session = 50
+max_turns_per_processor_session = 30
 max_work_orders_per_cycle = 20
 heartbeat_ttl_seconds = 60
 consecutive_all_fail_limit = 2

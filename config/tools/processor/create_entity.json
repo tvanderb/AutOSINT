@@ -1,0 +1,35 @@
+{
+  "name": "create_entity",
+  "description": "Create a new entity in the knowledge graph. Runs deduplication check first — if a matching entity exists, returns it instead of creating a duplicate. Always search_entities first before calling this.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "canonical_name": {
+        "type": "string",
+        "description": "The primary/official name of the entity."
+      },
+      "kind": {
+        "type": "string",
+        "description": "Descriptive label (e.g. 'person', 'organization', 'country', 'event', 'publication')."
+      },
+      "summary": {
+        "type": "string",
+        "description": "Brief orientation summary of the entity. Quick-reference, not analysis."
+      },
+      "aliases": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Alternative names, abbreviations, or translations."
+      },
+      "is_stub": {
+        "type": "boolean",
+        "description": "Mark as stub if referenced but not fully described (default false)."
+      },
+      "properties": {
+        "type": "object",
+        "description": "Freeform key-value properties (e.g. wikidata_qid, stock_ticker, iso_code, headquarters, founded_year)."
+      }
+    },
+    "required": ["canonical_name", "kind"]
+  }
+}

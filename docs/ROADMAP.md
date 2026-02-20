@@ -253,62 +253,62 @@ This is the first moment of truth. The LLM touches the system for the first time
 
 > Review: [PLAN.md §10 Tech Stack — LLM Integration](./PLAN.md#llm-integration), [§4.9 Tool Layer — Agentic Loop Mechanics](./PLAN.md#agentic-loop-mechanics)
 
-- [ ] LLM provider trait (abstraction over Anthropic/OpenAI):
-  - [ ] Send messages with tool definitions → get response
-  - [ ] Parse response: text content, tool calls, or mixed
-  - [ ] Token usage tracking
-- [ ] Anthropic API client (reqwest + serde):
-  - [ ] Messages API with tool use
-  - [ ] Tool call response parsing
-  - [ ] Tool result message construction
-- [ ] OpenAI API client (for embeddings; optionally for LLM calls):
-  - [ ] Chat completions with function calling
-  - [ ] Embeddings API (may already exist from M2)
-- [ ] Provider + model configurable per role in `system.toml` (Analyst model, Processor model, embedding model)
-- [ ] Non-streaming responses (streaming deferred per key decision)
-- [ ] Retry logic: exponential backoff with jitter, respect `Retry-After` headers
-  - [ ] Max 3 attempts, 1s initial, 30s max backoff (configurable)
-  - [ ] No retry on auth failures or context window exceeded
+- [x] LLM provider trait (abstraction over Anthropic/OpenAI):
+  - [x] Send messages with tool definitions → get response
+  - [x] Parse response: text content, tool calls, or mixed
+  - [x] Token usage tracking
+- [x] Anthropic API client (reqwest + serde):
+  - [x] Messages API with tool use
+  - [x] Tool call response parsing
+  - [x] Tool result message construction
+- [x] OpenAI API client (for embeddings; optionally for LLM calls):
+  - [x] Chat completions with function calling
+  - [x] Embeddings API (may already exist from M2)
+- [x] Provider + model configurable per role in `system.toml` (Analyst model, Processor model, embedding model)
+- [x] Non-streaming responses (streaming deferred per key decision)
+- [x] Retry logic: exponential backoff with jitter, respect `Retry-After` headers
+  - [x] Max 3 attempts, 1s initial, 30s max backoff (configurable)
+  - [x] No retry on auth failures or context window exceeded
 
 ### Agentic Loop
 
 > Review: [PLAN.md §4.9 Tool Layer — Agentic Loop Mechanics](./PLAN.md#agentic-loop-mechanics), [§4.9 Session Termination](./PLAN.md#session-termination)
 
-- [ ] Core loop implementation:
+- [x] Core loop implementation:
   1. Build messages: system prompt + conversation history + tool definitions
   2. Send to LLM API
   3. Response contains tool call(s) → execute each, append tool_result to history, loop
   4. Response contains text only → session complete
-- [ ] Max turns enforcement (configurable safety limit)
-- [ ] Session result type: `Completed(text)`, `ToolCalls(results)`, `MaxTurnsReached`, `Failed(error)`
-- [ ] Conversation history management (append messages, tool results)
+- [x] Max turns enforcement (configurable safety limit)
+- [x] Session result type: `Completed(text)`, `ToolCalls(results)`, `MaxTurnsReached`, `Failed(error)`
+- [x] Conversation history management (append messages, tool results)
 
 ### Tool Layer
 
 > Review: [PLAN.md §4.9 Tool Layer](./PLAN.md#49-tool-layer), [§4.9 Tool Definitions in Config](./PLAN.md#tool-definitions-in-config)
 
-- [ ] Tool schema loading: read JSON files from `config/tools/processor/`, parse into LLM-compatible tool definitions
-- [ ] Handler registry: map tool name → Rust handler function
-- [ ] Tool execution dispatcher: receive tool call from LLM response → find handler → execute → return tool_result
-- [ ] Error as tool_result: handler failures return `{ "is_error": true, "content": "..." }` to LLM
-- [ ] LLM self-correction tracking: count consecutive malformed tool calls, end session after 3 (configurable)
-- [ ] Tool result size limits (from `handler_config` in tool JSON files)
-- [ ] Intelligent truncation: search results return top N with omitted count (not byte-level cutoff), entity details truncate freeform properties before core fields, claim searches truncate content previews before dropping results — LLM always knows what was truncated and how much it's missing
+- [x] Tool schema loading: read JSON files from `config/tools/processor/`, parse into LLM-compatible tool definitions
+- [x] Handler registry: map tool name → Rust handler function
+- [x] Tool execution dispatcher: receive tool call from LLM response → find handler → execute → return tool_result
+- [x] Error as tool_result: handler failures return `{ "is_error": true, "content": "..." }` to LLM
+- [x] LLM self-correction tracking: count consecutive malformed tool calls, end session after 3 (configurable)
+- [x] Tool result size limits (from `handler_config` in tool JSON files)
+- [x] Intelligent truncation: search results return top N with omitted count (not byte-level cutoff), entity details truncate freeform properties before core fields, claim searches truncate content previews before dropping results — LLM always knows what was truncated and how much it's missing
 
 ### Processor Tool Schemas
 
 > Review: [PLAN.md §4.9 Processor Tools](./PLAN.md#processor-tools)
 
-- [ ] `config/tools/processor/search_entities.json`
-- [ ] `config/tools/processor/create_entity.json`
-- [ ] `config/tools/processor/update_entity.json`
-- [ ] `config/tools/processor/create_claim.json`
-- [ ] `config/tools/processor/create_relationship.json`
-- [ ] `config/tools/processor/update_relationship.json`
-- [ ] `config/tools/processor/fetch_url.json`
-- [ ] `config/tools/processor/update_entity_with_change_claim.json`
-- [ ] `config/tools/processor/fetch_source_catalog.json`
-- [ ] `config/tools/processor/fetch_source_query.json`
+- [x] `config/tools/processor/search_entities.json`
+- [x] `config/tools/processor/create_entity.json`
+- [x] `config/tools/processor/update_entity.json`
+- [x] `config/tools/processor/create_claim.json`
+- [x] `config/tools/processor/create_relationship.json`
+- [x] `config/tools/processor/update_relationship.json`
+- [x] `config/tools/processor/fetch_url.json`
+- [x] `config/tools/processor/update_entity_with_change_claim.json`
+- [x] `config/tools/processor/fetch_source_catalog.json`
+- [x] `config/tools/processor/fetch_source_query.json`
 
 ### Processor Tool Handlers
 
@@ -316,16 +316,16 @@ This is the first moment of truth. The LLM touches the system for the first time
 
 Wire each tool to the graph operations from M2 and Fetch from below:
 
-- [ ] `search_entities` handler → graph client semantic + full-text search
-- [ ] `create_entity` handler → graph client create_entity (with dedup check first)
-- [ ] `update_entity` handler → graph client update_entity
-- [ ] `update_entity_with_change_claim` handler → graph client update_entity + create_claim in single transaction (atomic "changes as claims" pattern)
-- [ ] `create_claim` handler → graph client create_claim
-- [ ] `create_relationship` handler → graph client create_relationship
-- [ ] `update_relationship` handler → graph client update_relationship
-- [ ] `fetch_url` handler → Fetch service `/fetch` endpoint
-- [ ] `fetch_source_catalog` handler → Fetch service `/sources` endpoint
-- [ ] `fetch_source_query` handler → Fetch service `/sources/{id}/query` endpoint
+- [x] `search_entities` handler → graph client semantic + full-text search
+- [x] `create_entity` handler → graph client create_entity (with dedup check first)
+- [x] `update_entity` handler → graph client update_entity
+- [x] `update_entity_with_change_claim` handler → graph client update_entity + create_claim in single transaction (atomic "changes as claims" pattern)
+- [x] `create_claim` handler → graph client create_claim
+- [x] `create_relationship` handler → graph client create_relationship
+- [x] `update_relationship` handler → graph client update_relationship
+- [x] `fetch_url` handler → Fetch service `/fetch` endpoint
+- [x] `fetch_source_catalog` handler → Fetch service `/sources` endpoint
+- [x] `fetch_source_query` handler → Fetch service `/sources/{id}/query` endpoint
 
 ### AutOSINT Fetch (Basic)
 
@@ -333,36 +333,36 @@ Wire each tool to the graph operations from M2 and Fetch from below:
 
 Minimal viable Fetch — enough for Processors to retrieve web content. Source adapters and browser automation come in M5.
 
-- [ ] Axum HTTP service with `/health` endpoint
-- [ ] `POST /fetch` — raw HTTP fetch (reqwest):
-  - [ ] Accept URL + options
-  - [ ] Fetch content
-  - [ ] Return content + metadata (status, content_type, etc.)
-  - [ ] HTML content extraction (scraper crate — strip to readable text)
-- [ ] `GET /sources` — source catalog (returns empty list initially; populated in M5)
-- [ ] URL-keyed response cache with configurable TTL
-- [ ] Rate limiting foundation (per-domain, configurable)
-- [ ] Structured logging with `tracing`
-- [ ] `/metrics` endpoint
+- [x] Axum HTTP service with `/health` endpoint
+- [x] `POST /fetch` — raw HTTP fetch (reqwest):
+  - [x] Accept URL + options
+  - [x] Fetch content
+  - [x] Return content + metadata (status, content_type, etc.)
+  - [x] HTML content extraction (scraper crate — strip to readable text)
+- [x] `GET /sources` — source catalog (returns empty list initially; populated in M5)
+- [x] URL-keyed response cache with configurable TTL
+- [x] Rate limiting foundation (per-domain, configurable)
+- [x] Structured logging with `tracing`
+- [x] `/metrics` endpoint
 
 ### Processor Session Management
 
 > Review: [PLAN.md §4.5 Processor](./PLAN.md#processor), [§4.9 Session Model](./PLAN.md#session-model)
 
-- [ ] Processor system prompt (`config/prompts/processor.md`):
-  - [ ] Role definition (discovery + extraction worker)
-  - [ ] Extraction guidance: extract ALL key claims, not just what the work order asked about
-  - [ ] Claims are units of information, not text — scale with information density
-  - [ ] Attribution depth guidance (primary vs secondhand)
-  - [ ] Dual timestamp awareness (published vs ingested)
-  - [ ] Entity deduplication guidance (search before creating)
-  - [ ] Changes-as-claims guidance
-- [ ] Processor session runner:
-  - [ ] Accept work order (objective, referenced entities, source guidance)
-  - [ ] Build initial message with system prompt + work order context
-  - [ ] Run agentic loop with Processor tools
-  - [ ] Session ends on text-only response
-  - [ ] Return session result (claims created count, entities created count, errors)
+- [x] Processor system prompt (`config/prompts/processor.md`):
+  - [x] Role definition (discovery + extraction worker)
+  - [x] Extraction guidance: extract ALL key claims, not just what the work order asked about
+  - [x] Claims are units of information, not text — scale with information density
+  - [x] Attribution depth guidance (primary vs secondhand)
+  - [x] Dual timestamp awareness (published vs ingested)
+  - [x] Entity deduplication guidance (search before creating)
+  - [x] Changes-as-claims guidance
+- [x] Processor session runner:
+  - [x] Accept work order (objective, referenced entities, source guidance)
+  - [x] Build initial message with system prompt + work order context
+  - [x] Run agentic loop with Processor tools
+  - [x] Session ends on text-only response
+  - [x] Return session result (claims created count, entities created count, errors)
 
 ### End-to-End Validation
 
@@ -372,10 +372,10 @@ Minimal viable Fetch — enough for Processors to retrieve web content. Source a
 
 ### Observability
 
-- [ ] LLM API metrics: request latency, input/output tokens, cost estimate, error rate, per-provider
-- [ ] Processor session metrics: duration, tool call count, entities created, claims created, relationships created
-- [ ] Fetch metrics: request latency, cache hit rate, error rate, per-domain
-- [ ] Tool execution metrics: per-tool call count, latency, error rate
+- [x] LLM API metrics: request latency, input/output tokens, cost estimate, error rate, per-provider
+- [x] Processor session metrics: duration, tool call count, entities created, claims created, relationships created
+- [x] Fetch metrics: request latency, cache hit rate, error rate, per-domain
+- [x] Tool execution metrics: per-tool call count, latency, error rate
 
 ---
 

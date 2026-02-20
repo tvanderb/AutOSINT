@@ -1,0 +1,14 @@
+{
+  "name": "fetch_url",
+  "description": "Fetch the content of a URL. Returns the text content extracted from the page (HTML stripped to readable text). Use this to retrieve articles, documents, and web pages for extraction.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "The URL to fetch."
+      }
+    },
+    "required": ["url"]
+  }
+}

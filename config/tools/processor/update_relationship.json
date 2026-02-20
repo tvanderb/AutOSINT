@@ -1,0 +1,34 @@
+{
+  "name": "update_relationship",
+  "description": "Update an existing relationship's properties.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "relationship_id": {
+        "type": "string",
+        "description": "UUID of the relationship to update."
+      },
+      "description": {
+        "type": "string",
+        "description": "Updated description."
+      },
+      "weight": {
+        "type": "number",
+        "description": "Updated weight."
+      },
+      "confidence": {
+        "type": "number",
+        "description": "Updated confidence."
+      },
+      "bidirectional": {
+        "type": "boolean",
+        "description": "Updated bidirectional flag."
+      },
+      "timestamp": {
+        "type": "string",
+        "description": "Updated timestamp (RFC3339)."
+      }
+    },
+    "required": ["relationship_id"]
+  }
+}
