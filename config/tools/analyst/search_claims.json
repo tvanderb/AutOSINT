@@ -1,0 +1,44 @@
+{
+  "name": "search_claims",
+  "description": "Search claims in the knowledge graph. Supports semantic search, temporal filtering, source filtering, and entity filtering. All parameters are optional — combine as needed for precise queries.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Semantic search query. Omit to rely on other filters alone."
+      },
+      "entity_id": {
+        "type": "string",
+        "description": "Filter to claims that reference this entity (UUID)."
+      },
+      "source_entity_id": {
+        "type": "string",
+        "description": "Filter to claims published by this source entity (UUID)."
+      },
+      "published_after": {
+        "type": "string",
+        "description": "Only claims published after this date (RFC3339, e.g., '2025-01-01T00:00:00Z')."
+      },
+      "published_before": {
+        "type": "string",
+        "description": "Only claims published before this date (RFC3339)."
+      },
+      "attribution_depth": {
+        "type": "string",
+        "enum": ["primary", "secondhand"],
+        "description": "Filter by attribution depth."
+      },
+      "sort_by": {
+        "type": "string",
+        "enum": ["relevance", "recency"],
+        "description": "Sort order: 'relevance' (default) or 'recency' (most recent first)."
+      },
+      "limit": {
+        "type": "integer",
+        "description": "Max results to return (default 20)."
+      }
+    },
+    "required": []
+  }
+}

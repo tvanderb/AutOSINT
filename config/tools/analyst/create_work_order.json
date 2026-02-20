@@ -1,0 +1,35 @@
+{
+  "name": "create_work_order",
+  "description": "Create a work order to direct Processors to fetch and extract information. Work orders are SEARCH DIRECTIVES — they tell Processors WHERE to look and WHAT to find, not what to analyze. Each work order should be atomic and focused. Check investigation history first to avoid duplicate requests.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "objective": {
+        "type": "string",
+        "description": "What to find. A search directive, not an analytical question. Example: 'Find recent reporting on NATO force posture changes in the Baltic states since January 2025' — not 'What is NATO's strategy in the Baltics?'"
+      },
+      "referenced_entities": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "UUIDs of existing graph entities this work order relates to (for context and dedup)."
+      },
+      "source_guidance": {
+        "type": "object",
+        "properties": {
+          "prefer": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Preferred source adapter IDs or types (e.g., 'web_search', 'rss_feeds')."
+          }
+        },
+        "description": "Optional hints about where to look for information."
+      },
+      "priority": {
+        "type": "string",
+        "enum": ["high", "normal", "low"],
+        "description": "Queue priority (default: 'normal'). Use 'high' for critical gaps blocking assessment."
+      }
+    },
+    "required": ["objective"]
+  }
+}

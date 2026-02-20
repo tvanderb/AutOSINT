@@ -1,0 +1,22 @@
+{
+  "name": "merge_entities",
+  "description": "Merge two entities that represent the same real-world thing. The source entity is absorbed into the target: all relationships and claims are reassigned, aliases are combined, and the source is deleted. Use when you identify duplicates in the graph.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "source_entity_id": {
+        "type": "string",
+        "description": "UUID of the entity to merge FROM (will be deleted)."
+      },
+      "target_entity_id": {
+        "type": "string",
+        "description": "UUID of the entity to merge INTO (will be kept)."
+      },
+      "reason": {
+        "type": "string",
+        "description": "Why these entities should be merged (for audit trail)."
+      }
+    },
+    "required": ["source_entity_id", "target_entity_id"]
+  }
+}

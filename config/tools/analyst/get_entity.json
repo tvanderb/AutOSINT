@@ -1,0 +1,14 @@
+{
+  "name": "get_entity",
+  "description": "Retrieve full details of an entity by ID, including all properties, aliases, summary, and metadata. Use after search to get complete information about a specific entity.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "entity_id": {
+        "type": "string",
+        "description": "UUID of the entity to retrieve."
+      }
+    },
+    "required": ["entity_id"]
+  }
+}

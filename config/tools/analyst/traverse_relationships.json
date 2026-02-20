@@ -1,0 +1,31 @@
+{
+  "name": "traverse_relationships",
+  "description": "Explore relationships connected to an entity. Returns relationships and the entities on the other end. Use to map connections, influence networks, and organizational structures.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "entity_id": {
+        "type": "string",
+        "description": "UUID of the entity to traverse from."
+      },
+      "direction": {
+        "type": "string",
+        "enum": ["outgoing", "incoming", "both"],
+        "description": "Direction of relationships to follow (default: 'both')."
+      },
+      "description_query": {
+        "type": "string",
+        "description": "Optional semantic filter — only return relationships whose description matches this query."
+      },
+      "min_weight": {
+        "type": "number",
+        "description": "Minimum relationship weight to include (0.0–1.0)."
+      },
+      "limit": {
+        "type": "integer",
+        "description": "Max relationships to return (default 20)."
+      }
+    },
+    "required": ["entity_id"]
+  }
+}

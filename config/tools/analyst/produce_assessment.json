@@ -1,0 +1,48 @@
+{
+  "name": "produce_assessment",
+  "description": "Produce the final intelligence assessment for this investigation. This is the analytical product — your synthesis of all gathered information. Once called, the investigation completes. Must include structured reasoning, explicit confidence level, evidence references, identified gaps, and competing hypotheses where applicable.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "content": {
+        "type": "object",
+        "description": "Structured assessment content. Should include: 'summary' (key findings), 'analysis' (detailed reasoning), 'competing_hypotheses' (alternative explanations), 'gaps' (what remains unknown), 'forward_indicators' (what to watch for), 'sources_evaluated' (quality assessment of evidence base).",
+        "properties": {
+          "summary": { "type": "string", "description": "Executive summary of key findings." },
+          "analysis": { "type": "string", "description": "Detailed analytical reasoning." },
+          "competing_hypotheses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "hypothesis": { "type": "string" },
+                "supporting_evidence": { "type": "string" },
+                "weaknesses": { "type": "string" }
+              }
+            },
+            "description": "Alternative explanations considered."
+          },
+          "gaps": { "type": "array", "items": { "type": "string" }, "description": "What remains unknown or uncertain." },
+          "forward_indicators": { "type": "array", "items": { "type": "string" }, "description": "Observable events that would confirm or refute this assessment." },
+          "sources_evaluated": { "type": "string", "description": "Assessment of the evidence base quality and coverage." }
+        }
+      },
+      "confidence": {
+        "type": "string",
+        "enum": ["high", "moderate", "low"],
+        "description": "Overall confidence in the assessment. 'high' = strong evidence, multiple corroborating sources. 'moderate' = reasonable evidence with some gaps. 'low' = limited evidence, significant uncertainty."
+      },
+      "entity_refs": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "UUIDs of key entities referenced in this assessment."
+      },
+      "claim_refs": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "UUIDs of key claims that support this assessment."
+      }
+    },
+    "required": ["content", "confidence", "entity_refs", "claim_refs"]
+  }
+}

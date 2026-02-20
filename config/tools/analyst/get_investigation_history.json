@@ -1,0 +1,9 @@
+{
+  "name": "get_investigation_history",
+  "description": "Get the full history of this investigation: all work orders grouped by cycle, with their objectives, statuses, and claim counts. Use to understand what has already been requested and avoid creating redundant work orders.",
+  "input_schema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}

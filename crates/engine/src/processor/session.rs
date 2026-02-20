@@ -61,6 +61,11 @@ impl ProcessorSession {
             tool_result_limits,
             dedup_config,
             session_counters: SessionCounters::default(),
+            store: None,
+            queue: None,
+            investigation_id: None,
+            investigation_cycle: None,
+            max_work_orders_per_cycle: None,
         };
 
         let mut tool_registry = ToolRegistry::new(context);

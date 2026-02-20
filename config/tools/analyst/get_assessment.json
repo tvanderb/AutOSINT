@@ -1,0 +1,14 @@
+{
+  "name": "get_assessment",
+  "description": "Retrieve the full content of a past assessment by ID. Use after search_assessments to read the complete analysis.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "assessment_id": {
+        "type": "string",
+        "description": "UUID of the assessment to retrieve."
+      }
+    },
+    "required": ["assessment_id"]
+  }
+}

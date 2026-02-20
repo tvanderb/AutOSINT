@@ -86,6 +86,12 @@ pub struct WorkOrder {
     /// Which processor handled this work order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub processor_id: Option<String>,
+    /// Which investigation cycle created this work order (for history grouping).
+    #[serde(default)]
+    pub cycle: i32,
+    /// Number of claims the Processor produced while processing this work order.
+    #[serde(default)]
+    pub claims_produced_count: i32,
     pub created_at: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<DateTime<Utc>>,
@@ -106,6 +112,8 @@ impl WorkOrder {
             referenced_entities: Vec::new(),
             source_guidance: None,
             processor_id: None,
+            cycle: 0,
+            claims_produced_count: 0,
             created_at: Utc::now(),
             completed_at: None,
         }

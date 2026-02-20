@@ -1,27 +1,32 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
+use axum::{
+    extract::State, http::StatusCode, response::IntoResponse, routing::get, routing::post, Json,
+    Router,
+};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use serde::Deserialize;
 
+use autosint_engine::circuit_breaker::CircuitBreakerRegistry;
 use autosint_engine::config;
 use autosint_engine::embeddings;
 use autosint_engine::graph;
-use autosint_engine::llm::LlmClient;
+use autosint_engine::orchestrator::Orchestrator;
+use autosint_engine::processor::{ProcessorPool, ProcessorPoolConfig};
 use autosint_engine::queue;
 use autosint_engine::store;
 
 /// Shared application state accessible from axum handlers.
 struct AppState {
     graph: Arc<graph::GraphClient>,
-    store: store::StoreClient,
-    queue: queue::QueueClient,
+    store: Arc<store::StoreClient>,
+    queue: Arc<queue::QueueClient>,
     #[allow(dead_code)]
     embedding_client: Option<Arc<embeddings::EmbeddingClient>>,
     #[allow(dead_code)]
-    processor_llm: Option<Arc<LlmClient>>,
-    #[allow(dead_code)]
     engine_config: Arc<config::EngineConfig>,
+    orchestrator: Arc<Orchestrator>,
     metrics_handle: PrometheusHandle,
 }
 
@@ -97,6 +102,8 @@ async fn main() {
         std::process::exit(1);
     }
 
+    let store_client = Arc::new(store_client);
+
     // Redis
     let queue_client = match queue::QueueClient::connect(&redis_url).await {
         Ok(client) => client,
@@ -110,6 +117,8 @@ async fn main() {
         tracing::error!(error = %e, "Failed to initialize Redis streams");
         std::process::exit(1);
     }
+
+    let queue_client = Arc::new(queue_client);
 
     tracing::info!("All databases connected and initialized");
 
@@ -130,20 +139,92 @@ async fn main() {
         );
     }
 
-    // Processor LLM client (optional — gracefully handle missing API key).
-    let processor_llm = LlmClient::new(
+    let fetch_base_url =
+        std::env::var("FETCH_BASE_URL").unwrap_or_else(|_| "http://localhost:8081".into());
+
+    let engine_config = Arc::new(engine_config);
+    let tool_schemas = Arc::new(engine_config.tool_schemas.clone());
+
+    // Start Processor pool (if LLM key available).
+    let processor_prompt = engine_config
+        .prompts
+        .get("processor")
+        .cloned()
+        .unwrap_or_default();
+
+    let _processor_pool = if autosint_engine::llm::LlmClient::new(
         engine_config.system.llm.processor.clone(),
         engine_config.system.retry.llm_api.clone(),
     )
-    .map(Arc::new);
+    .is_some()
+    {
+        let pool_config = ProcessorPoolConfig {
+            pool_size: engine_config.system.concurrency.processor_pool_size,
+            heartbeat_ttl_seconds: engine_config.system.safety.heartbeat_ttl_seconds,
+            heartbeat_interval_seconds: engine_config.system.safety.heartbeat_ttl_seconds / 3,
+        };
 
-    if processor_llm.is_some() {
-        tracing::info!("Processor LLM client initialized");
+        let pool = ProcessorPool::start(
+            pool_config,
+            engine_config.system.llm.processor.clone(),
+            engine_config.system.retry.llm_api.clone(),
+            Arc::clone(&graph_client),
+            embedding_client.clone(),
+            Arc::clone(&store_client),
+            Arc::clone(&queue_client),
+            fetch_base_url.clone(),
+            processor_prompt,
+            Arc::clone(&tool_schemas),
+            engine_config.system.tool_results.clone(),
+            engine_config.system.dedup.clone(),
+            engine_config.system.safety.clone(),
+        );
+
+        tracing::info!("Processor pool started");
+        Some(pool)
     } else {
-        tracing::warn!("Processor LLM client not available — API key not set");
+        tracing::warn!("Processor LLM not available — Processor pool not started");
+        None
+    };
+
+    // Circuit breakers for external dependency health tracking.
+    let circuit_breakers = Arc::new(CircuitBreakerRegistry::new());
+
+    // Create Orchestrator.
+    let analyst_prompt = engine_config
+        .prompts
+        .get("analyst")
+        .cloned()
+        .unwrap_or_default();
+
+    let orchestrator = Arc::new(Orchestrator::new(
+        Arc::clone(&graph_client),
+        Arc::clone(&store_client),
+        Arc::clone(&queue_client),
+        embedding_client.clone(),
+        Arc::clone(&engine_config),
+        fetch_base_url,
+        Arc::clone(&tool_schemas),
+        analyst_prompt,
+        Arc::clone(&circuit_breakers),
+    ));
+
+    // Recover any non-terminal investigations from before restart.
+    if let Err(e) = orchestrator.recover_on_startup().await {
+        tracing::error!(error = %e, "Failed to recover investigations on startup");
     }
 
-    let engine_config = Arc::new(engine_config);
+    // Spawn circuit breaker metrics reporter.
+    {
+        let cbs = Arc::clone(&circuit_breakers);
+        tokio::spawn(async move {
+            let interval = std::time::Duration::from_secs(30);
+            loop {
+                tokio::time::sleep(interval).await;
+                cbs.report_metrics();
+            }
+        });
+    }
 
     // Build shared state.
     let state = Arc::new(AppState {
@@ -151,8 +232,8 @@ async fn main() {
         store: store_client,
         queue: queue_client,
         embedding_client,
-        processor_llm,
         engine_config,
+        orchestrator,
         metrics_handle,
     });
 
@@ -160,6 +241,7 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/metrics", get(metrics_handler))
+        .route("/investigate", post(investigate_handler))
         .with_state(state);
 
     let port: u16 = std::env::var("ENGINE_PORT")
@@ -205,4 +287,49 @@ async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
 /// Prometheus metrics endpoint.
 async fn metrics_handler(State(state): State<Arc<AppState>>) -> String {
     state.metrics_handle.render()
+}
+
+/// Request body for starting an investigation.
+#[derive(Deserialize)]
+struct InvestigateRequest {
+    prompt: String,
+}
+
+/// POST /investigate — start a new investigation.
+async fn investigate_handler(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<InvestigateRequest>,
+) -> impl IntoResponse {
+    let orchestrator = Arc::clone(&state.orchestrator);
+
+    match orchestrator.start_investigation(&req.prompt).await {
+        Ok(investigation_id) => {
+            // Spawn investigation lifecycle in background.
+            let orch = Arc::clone(&state.orchestrator);
+            let inv_id = investigation_id;
+            tokio::spawn(async move {
+                if let Err(e) = orch.run_investigation(inv_id).await {
+                    tracing::error!(
+                        investigation_id = %inv_id,
+                        error = %e,
+                        "Investigation failed"
+                    );
+                }
+            });
+
+            let body = serde_json::json!({
+                "investigation_id": investigation_id.to_string(),
+                "status": "pending",
+                "message": "Investigation started."
+            });
+
+            (StatusCode::ACCEPTED, Json(body))
+        }
+        Err(e) => {
+            let body = serde_json::json!({
+                "error": e,
+            });
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(body))
+        }
+    }
 }

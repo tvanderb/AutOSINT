@@ -1,4 +1,5 @@
 pub mod analyst;
+pub mod circuit_breaker;
 pub mod config;
 pub mod embeddings;
 pub mod graph;

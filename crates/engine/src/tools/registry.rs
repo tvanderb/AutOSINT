@@ -1,17 +1,20 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::Arc;
 
 use serde_json::Value;
 
 use autosint_common::config::{DedupConfig, ToolResultLimits};
+use autosint_common::ids::InvestigationId;
 
 use crate::embeddings::EmbeddingClient;
 use crate::graph::GraphClient;
 use crate::llm::session::{ToolExecutionResult, ToolExecutor};
 use crate::llm::types::ToolDefinition;
+use crate::queue::QueueClient;
+use crate::store::StoreClient;
 
 /// Shared context available to all tool handlers.
 pub struct ToolHandlerContext {
@@ -22,6 +25,12 @@ pub struct ToolHandlerContext {
     pub tool_result_limits: ToolResultLimits,
     pub dedup_config: DedupConfig,
     pub session_counters: SessionCounters,
+    // Analyst-specific context (None for Processor sessions).
+    pub store: Option<Arc<StoreClient>>,
+    pub queue: Option<Arc<QueueClient>>,
+    pub investigation_id: Option<InvestigationId>,
+    pub investigation_cycle: Option<i32>,
+    pub max_work_orders_per_cycle: Option<u32>,
 }
 
 /// Counters tracking write operations during a session.
@@ -29,6 +38,8 @@ pub struct SessionCounters {
     pub entities_created: AtomicU32,
     pub claims_created: AtomicU32,
     pub relationships_created: AtomicU32,
+    pub work_orders_created: AtomicU32,
+    pub assessment_produced: AtomicBool,
 }
 
 impl Default for SessionCounters {
@@ -37,6 +48,8 @@ impl Default for SessionCounters {
             entities_created: AtomicU32::new(0),
             claims_created: AtomicU32::new(0),
             relationships_created: AtomicU32::new(0),
+            work_orders_created: AtomicU32::new(0),
+            assessment_produced: AtomicBool::new(false),
         }
     }
 }

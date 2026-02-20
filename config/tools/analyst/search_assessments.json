@@ -1,0 +1,18 @@
+{
+  "name": "search_assessments",
+  "description": "Search past assessments by semantic similarity. Use to find prior analysis on related topics, avoid duplicating previous investigations, and build on existing work.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Semantic search query describing the topic or question."
+      },
+      "limit": {
+        "type": "integer",
+        "description": "Max results to return (default 5)."
+      }
+    },
+    "required": ["query"]
+  }
+}

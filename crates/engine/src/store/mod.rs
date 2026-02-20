@@ -1,3 +1,7 @@
+mod assessments;
+mod investigations;
+mod work_orders;
+
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
@@ -63,6 +67,9 @@ pub enum StoreError {
 
     #[error("PostgreSQL migration error: {0}")]
     Migration(String),
+
+    #[error("Not found: {0}")]
+    NotFound(String),
 }
 
 impl From<StoreError> for autosint_common::AutOsintError {

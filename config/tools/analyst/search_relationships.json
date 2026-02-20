@@ -1,0 +1,18 @@
+{
+  "name": "search_relationships",
+  "description": "Search all relationships in the knowledge graph by semantic similarity. Use to find connections of a particular type across the entire graph (e.g., 'military alliance', 'trade partnership').",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Semantic search query describing the type of relationship."
+      },
+      "limit": {
+        "type": "integer",
+        "description": "Max results to return (default 20)."
+      }
+    },
+    "required": ["query"]
+  }
+}

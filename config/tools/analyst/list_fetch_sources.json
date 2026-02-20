@@ -1,0 +1,9 @@
+{
+  "name": "list_fetch_sources",
+  "description": "List all available data source adapters in the Fetch service. Shows what sources Processors can query (web search, RSS feeds, specialized databases, etc.) and their capabilities.",
+  "input_schema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}

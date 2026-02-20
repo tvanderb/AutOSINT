@@ -1,0 +1,19 @@
+{
+  "name": "query_geo",
+  "description": "Query the geographic intelligence service for spatial context. Supports queries about terrain, borders, nearby features, distances, routes, and regional features. Use to ground geographic analysis in physical reality.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query_type": {
+        "type": "string",
+        "enum": ["context", "nearby", "distance", "route", "terrain", "borders", "features"],
+        "description": "Type of geographic query."
+      },
+      "parameters": {
+        "type": "object",
+        "description": "Query-specific parameters. For 'context'/'terrain': { location }. For 'nearby': { location, radius_km, feature_types }. For 'distance': { from, to }. For 'route': { origin, destination }. For 'borders': { country }. For 'features': { region, feature_types }."
+      }
+    },
+    "required": ["query_type", "parameters"]
+  }
+}

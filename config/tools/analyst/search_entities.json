@@ -1,0 +1,27 @@
+{
+  "name": "search_entities",
+  "description": "Search the knowledge graph for entities by name, alias, or semantic similarity. Use to find entities relevant to your investigation, identify what's already known, and discover connections.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Search query — entity name, alias, or descriptive text for semantic search."
+      },
+      "mode": {
+        "type": "string",
+        "enum": ["semantic", "keyword"],
+        "description": "Search mode: 'semantic' (embedding similarity, default) or 'keyword' (fulltext on name/aliases)."
+      },
+      "kind": {
+        "type": "string",
+        "description": "Filter by entity kind (e.g., 'person', 'organization', 'country', 'event')."
+      },
+      "limit": {
+        "type": "integer",
+        "description": "Max results to return (default 20)."
+      }
+    },
+    "required": ["query"]
+  }
+}

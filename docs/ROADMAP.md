@@ -389,168 +389,168 @@ The Analyst drives its own investigation: queries the graph, identifies gaps, cr
 
 > Review: [PLAN.md §4.6 Work Order System](./PLAN.md#46-work-order-system), [§4.4 Redis Schema](./PLAN.md#redis-schema-work-order-queue)
 
-- [ ] Work order enqueue: write to PostgreSQL (status: queued) + XADD to appropriate Redis priority stream
-- [ ] Work order dequeue: XREADGROUP from consumer group, update PostgreSQL (status: processing)
-- [ ] Work order completion: XACK in Redis, update PostgreSQL (status: completed)
-- [ ] Work order failure: update PostgreSQL (status: failed), retry once (re-queue), then permanent failure
-- [ ] Pending entry reclamation: detect unacknowledged messages past heartbeat TTL, reclaim and re-queue
-- [ ] Priority checking: Processors check `workorders:high` → `workorders:normal` → `workorders:low`
+- [x] Work order enqueue: write to PostgreSQL (status: queued) + XADD to appropriate Redis priority stream
+- [x] Work order dequeue: XREADGROUP from consumer group, update PostgreSQL (status: processing)
+- [x] Work order completion: XACK in Redis, update PostgreSQL (status: completed)
+- [x] Work order failure: update PostgreSQL (status: failed), retry once (re-queue), then permanent failure
+- [x] Pending entry reclamation: detect unacknowledged messages past heartbeat TTL, reclaim and re-queue
+- [x] Priority checking: Processors check `workorders:high` → `workorders:normal` → `workorders:low`
 
 ### Work Order Integration Tests
 
 > Review: [PLAN.md §12 CI & Testing — Integration Tests](./PLAN.md#integration-tests)
 
-- [ ] Redis Streams: XADD → XREADGROUP → XACK lifecycle
-- [ ] Consumer group behavior: multiple consumers, message assignment
-- [ ] Pending entry detection and reclamation after timeout
-- [ ] Priority ordering: high-priority messages consumed before normal/low
+- [ ] Redis Streams: XADD → XREADGROUP → XACK lifecycle (deferred: requires running Redis)
+- [ ] Consumer group behavior: multiple consumers, message assignment (deferred: requires running Redis)
+- [ ] Pending entry detection and reclamation after timeout (deferred: requires running Redis)
+- [ ] Priority ordering: high-priority messages consumed before normal/low (deferred: requires running Redis)
 
 ### Processor Pool
 
 > Review: [PLAN.md §4.7 Orchestration — Processor Liveness](./PLAN.md#processor-liveness-heartbeats)
 
-- [ ] Tokio task pool: spawn Processor sessions as tasks
-- [ ] Configurable pool size (from `system.toml`)
-- [ ] Heartbeat system: Processor writes Redis key `processor:{id}:heartbeat` with short TTL, refreshes periodically — **heartbeat runs as an independent tokio task**, separate from the main processing work (critical for Processors blocked on long operations like Scribe long-polls)
-- [ ] Heartbeat monitoring: Orchestrator checks for expired heartbeat keys
-- [ ] Dead Processor handling: expired heartbeat → reclaim work order, log event
-- [ ] Processor lifecycle: idle → claim work order → run session → report result → idle
+- [x] Tokio task pool: spawn Processor sessions as tasks
+- [x] Configurable pool size (from `system.toml`)
+- [x] Heartbeat system: Processor writes Redis key `processor:{id}:heartbeat` with short TTL, refreshes periodically — **heartbeat runs as an independent tokio task**, separate from the main processing work (critical for Processors blocked on long operations like Scribe long-polls)
+- [x] Heartbeat monitoring: Orchestrator checks for expired heartbeat keys
+- [x] Dead Processor handling: expired heartbeat → reclaim work order, log event
+- [x] Processor lifecycle: idle → claim work order → run session → report result → idle
 
 ### Orchestrator State Machine
 
 > Review: [PLAN.md §4.7 Orchestration](./PLAN.md#47-orchestration), [§4.7 Investigation State Machine](./PLAN.md#investigation-state-machine)
 
-- [ ] Investigation creation: receive prompt → write to PostgreSQL (PENDING)
-- [ ] State transition engine: enforce valid transitions per state machine diagram
-- [ ] PENDING → ANALYST_RUNNING: start Analyst session
-- [ ] ANALYST_RUNNING → PROCESSING: Analyst created work orders, dispatch to Redis, increment cycle_count
-- [ ] ANALYST_RUNNING → COMPLETED: Analyst called produce_assessment
-- [ ] ANALYST_RUNNING → ANALYST_RUNNING: empty session (no work orders, no assessment) → retry once, second empty → force final assessment mode
-- [ ] PROCESSING → ANALYST_RUNNING: all work orders resolved (completed or permanently failed)
-- [ ] Any active → COMPLETED: max cycles reached → force final Analyst session with modified prompt
-- [ ] PROCESSING → FAILED: two consecutive cycles where ALL work orders failed
-- [ ] State persistence: all transitions written to PostgreSQL
-- [ ] Concurrent investigation support: each investigation is independent state machine
+- [x] Investigation creation: receive prompt → write to PostgreSQL (PENDING)
+- [x] State transition engine: enforce valid transitions per state machine diagram
+- [x] PENDING → ANALYST_RUNNING: start Analyst session
+- [x] ANALYST_RUNNING → PROCESSING: Analyst created work orders, dispatch to Redis, increment cycle_count
+- [x] ANALYST_RUNNING → COMPLETED: Analyst called produce_assessment
+- [x] ANALYST_RUNNING → ANALYST_RUNNING: empty session (no work orders, no assessment) → retry once, second empty → force final assessment mode
+- [x] PROCESSING → ANALYST_RUNNING: all work orders resolved (completed or permanently failed)
+- [x] Any active → COMPLETED: max cycles reached → force final Analyst session with modified prompt
+- [x] PROCESSING → FAILED: two consecutive cycles where ALL work orders failed
+- [x] State persistence: all transitions written to PostgreSQL
+- [x] Concurrent investigation support: each investigation is independent state machine
 
 ### Safety Limits
 
 > Review: [PLAN.md §4.7 Safety Limits](./PLAN.md#safety-limits)
 
-- [ ] Max cycles per investigation (configurable, default ~10)
-- [ ] Max turns per Analyst session (configurable, default ~50)
-- [ ] Max work orders per cycle (configurable, default ~20)
-- [ ] Heartbeat TTL (configurable, default ~60s)
-- [ ] Consecutive all-fail cycle limit (2)
-- [ ] All limits read from `system.toml`
+- [x] Max cycles per investigation (configurable, default ~10)
+- [x] Max turns per Analyst session (configurable, default ~50)
+- [x] Max work orders per cycle (configurable, default ~20)
+- [x] Heartbeat TTL (configurable, default ~60s)
+- [x] Consecutive all-fail cycle limit (2)
+- [x] All limits read from `system.toml`
 
 ### Assessment Store
 
 > Review: [PLAN.md §4.2 Assessment Store](./PLAN.md#assessment-store-postgresql--pgvector), [§4.3 Assessments](./PLAN.md#assessments-in-assessment-store)
 
-- [ ] Write assessment: insert to PostgreSQL with embedding (semantic search over assessments)
-- [ ] Search assessments: semantic/vector search via pgvector
-- [ ] Get assessment by ID: full content retrieval
-- [ ] Assessment references graph entities/claims by ID (JSONB arrays, cross-database references)
+- [x] Write assessment: insert to PostgreSQL with embedding (semantic search over assessments)
+- [x] Search assessments: semantic/vector search via pgvector
+- [x] Get assessment by ID: full content retrieval
+- [x] Assessment references graph entities/claims by ID (JSONB arrays, cross-database references)
 
 ### Assessment Store Integration Tests
 
-- [ ] Write and retrieve assessment
-- [ ] Semantic search over assessments (write multiple, query, verify relevance ranking)
-- [ ] Entity/claim reference integrity (references stored correctly as JSONB)
+- [ ] Write and retrieve assessment (deferred: requires running PostgreSQL)
+- [ ] Semantic search over assessments (deferred: requires running PostgreSQL)
+- [ ] Entity/claim reference integrity (deferred: requires running PostgreSQL)
 
 ### Analyst Tool Schemas
 
 > Review: [PLAN.md §4.9 Analyst Tools](./PLAN.md#analyst-tools)
 
-- [ ] `config/tools/analyst/search_entities.json`
-- [ ] `config/tools/analyst/get_entity.json`
-- [ ] `config/tools/analyst/traverse_relationships.json`
-- [ ] `config/tools/analyst/search_relationships.json`
-- [ ] `config/tools/analyst/search_claims.json`
-- [ ] `config/tools/analyst/search_assessments.json`
-- [ ] `config/tools/analyst/get_assessment.json`
-- [ ] `config/tools/analyst/create_work_order.json`
-- [ ] `config/tools/analyst/produce_assessment.json`
-- [ ] `config/tools/analyst/merge_entities.json`
-- [ ] `config/tools/analyst/get_investigation_history.json`
-- [ ] `config/tools/analyst/list_fetch_sources.json`
-- [ ] `config/tools/analyst/query_geo.json` (handler returns "Geo unavailable" until M5)
+- [x] `config/tools/analyst/search_entities.json`
+- [x] `config/tools/analyst/get_entity.json`
+- [x] `config/tools/analyst/traverse_relationships.json`
+- [x] `config/tools/analyst/search_relationships.json`
+- [x] `config/tools/analyst/search_claims.json`
+- [x] `config/tools/analyst/search_assessments.json`
+- [x] `config/tools/analyst/get_assessment.json`
+- [x] `config/tools/analyst/create_work_order.json`
+- [x] `config/tools/analyst/produce_assessment.json`
+- [x] `config/tools/analyst/merge_entities.json`
+- [x] `config/tools/analyst/get_investigation_history.json`
+- [x] `config/tools/analyst/list_fetch_sources.json`
+- [x] `config/tools/analyst/query_geo.json` (handler returns "Geo unavailable" until M5)
 
 ### Analyst Tool Handlers
 
 > Review: [PLAN.md §4.9 Analyst Tools](./PLAN.md#analyst-tools)
 
-- [ ] `search_entities` handler → graph client (same as Processor but may return different fields: id, canonical_name, kind, summary, score)
-- [ ] `get_entity` handler → graph client get_entity with all properties
-- [ ] `traverse_relationships` handler → graph client traverse
-- [ ] `search_relationships` handler → graph client relationship search
-- [ ] `search_claims` handler → graph client claim search (all filter modes)
-- [ ] `search_assessments` handler → Assessment Store semantic search
-- [ ] `get_assessment` handler → Assessment Store get by ID
-- [ ] `merge_entities` handler → graph client merge_entities (reassign edges, combine aliases, delete source, log merge event)
-- [ ] `create_work_order` handler → work order enqueue (PostgreSQL + Redis)
-- [ ] `produce_assessment` handler → Assessment Store write
-- [ ] `get_investigation_history` handler → PostgreSQL query (work orders for current investigation, grouped by cycle)
-- [ ] `list_fetch_sources` handler → Fetch `/sources` endpoint
-- [ ] `query_geo` handler → stub returning "AutOSINT Geo not yet available" (wired to Geo in M5)
+- [x] `search_entities` handler → graph client (same as Processor but may return different fields: id, canonical_name, kind, summary, score)
+- [x] `get_entity` handler → graph client get_entity with all properties
+- [x] `traverse_relationships` handler → graph client traverse
+- [x] `search_relationships` handler → graph client relationship search
+- [x] `search_claims` handler → graph client claim search (all filter modes)
+- [x] `search_assessments` handler → Assessment Store semantic search
+- [x] `get_assessment` handler → Assessment Store get by ID
+- [x] `merge_entities` handler → graph client merge_entities (reassign edges, combine aliases, delete source, log merge event)
+- [x] `create_work_order` handler → work order enqueue (PostgreSQL + Redis)
+- [x] `produce_assessment` handler → Assessment Store write
+- [x] `get_investigation_history` handler → PostgreSQL query (work orders for current investigation, grouped by cycle)
+- [x] `list_fetch_sources` handler → Fetch `/sources` endpoint
+- [x] `query_geo` handler → stub returning "AutOSINT Geo not yet available" (wired to Geo in M5)
 
 ### Analyst Session Management
 
 > Review: [PLAN.md §4.5 Analyst](./PLAN.md#analyst), [§4.9 Session Model](./PLAN.md#session-model), [§4.9 Session Termination](./PLAN.md#session-termination)
 
-- [ ] Analyst system prompt (`config/prompts/analyst.md`):
-  - [ ] Role definition (central intelligence actor, self-regulating feedback loop)
-  - [ ] Self-serve context guidance (query graph, query assessments, query Geo)
-  - [ ] Gap identification → work order creation guidance
-  - [ ] "Do I know enough?" decision framework
-  - [ ] Temporal relevance guidance (consider claim age per-topic)
-  - [ ] Assessment production guidance (conclusions, confidence, reasoning, gaps, competing hypotheses, forward indicators)
-  - [ ] Honest uncertainty guidance (always produce assessment, state limitations)
-  - [ ] `create_work_order` vs `produce_assessment` as mutually exclusive session outcomes
-- [ ] Analyst session runner:
-  - [ ] Fresh session per cycle (no conversation continuity)
-  - [ ] Investigation prompt + tool access
-  - [ ] Run agentic loop with Analyst tools
-  - [ ] Detect session outcome: work orders created → PROCESSING, assessment produced → COMPLETED
-  - [ ] Max turns enforcement
-- [ ] Force-final-assessment mode: modified system prompt for max-cycle and empty-session-retry scenarios
+- [x] Analyst system prompt (`config/prompts/analyst.md`):
+  - [x] Role definition (central intelligence actor, self-regulating feedback loop)
+  - [x] Self-serve context guidance (query graph, query assessments, query Geo)
+  - [x] Gap identification → work order creation guidance
+  - [x] "Do I know enough?" decision framework
+  - [x] Temporal relevance guidance (consider claim age per-topic)
+  - [x] Assessment production guidance (conclusions, confidence, reasoning, gaps, competing hypotheses, forward indicators)
+  - [x] Honest uncertainty guidance (always produce assessment, state limitations)
+  - [x] `create_work_order` vs `produce_assessment` as mutually exclusive session outcomes
+- [x] Analyst session runner:
+  - [x] Fresh session per cycle (no conversation continuity)
+  - [x] Investigation prompt + tool access
+  - [x] Run agentic loop with Analyst tools
+  - [x] Detect session outcome: work orders created → PROCESSING, assessment produced → COMPLETED
+  - [x] Max turns enforcement
+- [x] Force-final-assessment mode: modified system prompt for max-cycle and empty-session-retry scenarios
 
 ### Error Handling
 
 > Review: [PLAN.md §11 Error Handling](./PLAN.md#11-error-handling)
 
-- [ ] Dependency classification:
-  - [ ] Hard: Neo4j, PostgreSQL, Redis, LLM API
-  - [ ] Soft: Fetch, Geo, Scribe
-- [ ] Circuit breakers on all dependencies:
-  - [ ] Closed → Open on failure threshold
-  - [ ] Open → Half-Open after cooldown
-  - [ ] Half-Open → Closed on probe success, Open on probe failure
-  - [ ] Configurable thresholds and cooldowns
-- [ ] SUSPENDED state:
-  - [ ] Hard dependency circuit opens → transition active investigations to SUSPENDED
-  - [ ] Persist reason, timestamp, resume point in PostgreSQL
-  - [ ] Circuit closes → auto-resume SUSPENDED investigations
-- [ ] Soft dependency failures → error as tool_result (LLM adapts)
-- [ ] Engine restart recovery:
-  - [ ] On startup, query PostgreSQL for non-terminal investigations
-  - [ ] SUSPENDED → check dependency health, resume if available
-  - [ ] ANALYST_RUNNING / PROCESSING (crashed mid-operation) → treat as SUSPENDED
+- [x] Dependency classification:
+  - [x] Hard: Neo4j, PostgreSQL, Redis, LLM API
+  - [x] Soft: Fetch, Geo, Scribe
+- [x] Circuit breakers on all dependencies:
+  - [x] Closed → Open on failure threshold
+  - [x] Open → Half-Open after cooldown
+  - [x] Half-Open → Closed on probe success, Open on probe failure
+  - [x] Configurable thresholds and cooldowns
+- [x] SUSPENDED state:
+  - [x] Hard dependency circuit opens → transition active investigations to SUSPENDED
+  - [x] Persist reason, timestamp, resume point in PostgreSQL
+  - [x] Circuit closes → auto-resume SUSPENDED investigations
+- [x] Soft dependency failures → error as tool_result (LLM adapts)
+- [x] Engine restart recovery:
+  - [x] On startup, query PostgreSQL for non-terminal investigations
+  - [x] SUSPENDED → check dependency health, resume if available
+  - [x] ANALYST_RUNNING / PROCESSING (crashed mid-operation) → treat as SUSPENDED
 
 ### Failed Investigation Handling
 
 > Review: [PLAN.md §4.7 Failed Investigations](./PLAN.md#failed-investigations)
 
-- [ ] FAILED investigation triggers final Analyst session with modified prompt
-- [ ] "Produce the best assessment you can with available information, noting all gaps, limitations, and failures encountered"
-- [ ] Partial assessment written to Assessment Store
+- [x] FAILED investigation triggers final Analyst session with modified prompt
+- [x] "Produce the best assessment you can with available information, noting all gaps, limitations, and failures encountered"
+- [x] Partial assessment written to Assessment Store
 
 ### Investigation History Tool
 
 > Review: [PLAN.md §4.7 Investigation History (Anti-Dedup)](./PLAN.md#investigation-history-anti-dedup)
 
-- [ ] `get_investigation_history` returns: cycle number, work orders per cycle (objective, status, claims_produced_count)
-- [ ] Analyst sees full investigation history — avoids redundant work orders via judgment
+- [x] `get_investigation_history` returns: cycle number, work orders per cycle (objective, status, claims_produced_count)
+- [x] Analyst sees full investigation history — avoids redundant work orders via judgment
 
 ### End-to-End Validation
 
@@ -561,13 +561,13 @@ The Analyst drives its own investigation: queries the graph, identifies gaps, cr
 
 ### Observability
 
-- [ ] Investigation lifecycle metrics: created, active, completed, failed, suspended counts
-- [ ] Cycle count distribution per investigation
-- [ ] Work order queue depth (per priority)
-- [ ] Processor pool utilization (active/idle/dead)
-- [ ] Analyst session metrics: duration, tool calls, outcome (work_orders vs assessment)
-- [ ] Assessment production metrics: count, confidence distribution
-- [ ] Circuit breaker state metrics (per dependency)
+- [x] Investigation lifecycle metrics: created, active, completed, failed, suspended counts
+- [x] Cycle count distribution per investigation
+- [x] Work order queue depth (per priority)
+- [x] Processor pool utilization (active/idle/dead)
+- [x] Analyst session metrics: duration, tool calls, outcome (work_orders vs assessment)
+- [x] Assessment production metrics: count, confidence distribution
+- [x] Circuit breaker state metrics (per dependency)
 
 ---
 
