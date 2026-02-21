@@ -10,6 +10,7 @@ use autosint_common::types::Entity;
 use autosint_common::EntityId;
 
 use super::conversions::node_to_entity;
+use super::escape_lucene_query;
 use super::GraphClient;
 use super::GraphError;
 
@@ -150,13 +151,14 @@ impl<'a> EntityDedup<'a> {
 
         // Also check aliases (stored as JSON arrays).
         // Use fulltext index for efficiency, then verify exact match in Rust.
+        let escaped_name = escape_lucene_query(name);
         let q2 = query(
             "CALL db.index.fulltext.queryNodes('entity_name_fulltext', $name) \
              YIELD node, score \
              RETURN node \
              LIMIT 10",
         )
-        .param("name", name);
+        .param("name", escaped_name.as_str());
 
         let mut result2 = self
             .graph
@@ -196,13 +198,14 @@ impl<'a> EntityDedup<'a> {
         name: &str,
         _kind: &str,
     ) -> Result<Option<(EntityId, f64)>, GraphError> {
+        let escaped_name = escape_lucene_query(name);
         let q = query(
             "CALL db.index.fulltext.queryNodes('entity_name_fulltext', $name) \
              YIELD node, score \
              RETURN node \
              LIMIT 10",
         )
-        .param("name", name);
+        .param("name", escaped_name.as_str());
 
         let mut result = self
             .graph

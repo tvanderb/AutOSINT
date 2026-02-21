@@ -20,6 +20,7 @@ mod traverse_relationships;
 mod update_entity;
 mod update_entity_with_change_claim;
 mod update_relationship;
+mod web_search;
 
 use super::registry::ToolRegistry;
 
@@ -38,6 +39,7 @@ pub fn register_processor_tools(registry: &mut ToolRegistry) {
     );
     registry.register("fetch_source_catalog", fetch_source_catalog::handler());
     registry.register("fetch_source_query", fetch_source_query::handler());
+    registry.register("web_search", web_search::handler());
 }
 
 /// Register all Analyst tool handlers with the registry.

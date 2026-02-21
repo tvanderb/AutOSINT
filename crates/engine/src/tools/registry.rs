@@ -209,9 +209,12 @@ impl ToolRegistry {
             Box::pin(async move {
                 let start = std::time::Instant::now();
 
+                tracing::info!(tool = %name, "Tool call started");
+
                 let handler = match handlers.get(&name) {
                     Some(h) => h,
                     None => {
+                        tracing::warn!(tool = %name, "Unknown tool called");
                         metrics::counter!("tools.execution.errors", "tool" => name.clone())
                             .increment(1);
                         return ToolExecutionResult {
@@ -237,19 +240,32 @@ impl ToolRegistry {
                         let content = serde_json::to_string(&value).unwrap_or_else(|e| {
                             format!("{{\"error\": \"Failed to serialize result: {}\"}}", e)
                         });
+                        let content_len = content.len();
+                        tracing::info!(
+                            tool = %name,
+                            latency_s = latency,
+                            result_len = content_len,
+                            "Tool call succeeded"
+                        );
                         ToolExecutionResult {
                             content,
                             is_error: false,
                             is_malformed: false,
                         }
                     }
-                    Err(msg) => {
+                    Err(ref msg) => {
+                        tracing::warn!(
+                            tool = %name,
+                            latency_s = latency,
+                            error = %msg,
+                            "Tool call failed"
+                        );
                         metrics::counter!("tools.execution.errors", "tool" => name).increment(1);
                         let is_malformed = msg.contains("invalid type")
                             || msg.contains("missing field")
                             || msg.contains("expected");
                         ToolExecutionResult {
-                            content: msg,
+                            content: msg.clone(),
                             is_error: true,
                             is_malformed,
                         }

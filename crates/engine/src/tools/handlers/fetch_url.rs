@@ -46,13 +46,21 @@ pub fn handler() -> ToolHandler {
                 .map_err(|e| format!("Failed to parse fetch response: {}", e))?;
 
             // Truncate content to keep within LLM context limits.
+            // Use char_indices to avoid panicking on multi-byte UTF-8 boundaries.
             let content = if fetch_response.content.len() > MAX_CONTENT_CHARS {
-                let truncated = &fetch_response.content[..MAX_CONTENT_CHARS];
+                let truncate_at = fetch_response
+                    .content
+                    .char_indices()
+                    .take_while(|(i, _)| *i <= MAX_CONTENT_CHARS)
+                    .last()
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                let truncated = &fetch_response.content[..truncate_at];
                 format!(
-                    "{}...\n[Content truncated: {} chars total, showing first {}]",
+                    "{}...\n[Content truncated: {} bytes total, showing first {}]",
                     truncated,
                     fetch_response.content.len(),
-                    MAX_CONTENT_CHARS
+                    truncate_at
                 )
             } else {
                 fetch_response.content

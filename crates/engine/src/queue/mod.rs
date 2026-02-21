@@ -138,7 +138,8 @@ impl QueueClient {
     }
 
     /// Dequeue the next work order from any priority stream (high → normal → low).
-    /// Uses XREADGROUP with the consumer group. Blocks for `block_ms` if no messages.
+    /// First checks for pending (previously delivered but unacknowledged) messages,
+    /// then reads new messages. Blocks for `block_ms` if no messages available.
     /// Returns `(stream_name, entry_id, message)` or None if no messages available.
     pub async fn dequeue(
         &self,
@@ -148,8 +149,38 @@ impl QueueClient {
     {
         let mut conn = self.conn.clone();
 
-        // Build XREADGROUP command: read from all 3 priority streams.
-        // XREADGROUP GROUP processors <consumer> [BLOCK ms] COUNT 1 STREAMS high normal low > > >
+        // First: check for pending messages (ID=0 means re-read our own unacknowledged entries).
+        let mut pending_cmd = redis::cmd("XREADGROUP");
+        pending_cmd
+            .arg("GROUP")
+            .arg(CONSUMER_GROUP)
+            .arg(consumer_name)
+            .arg("COUNT")
+            .arg(1)
+            .arg("STREAMS");
+        for stream in PRIORITY_STREAMS {
+            pending_cmd.arg(*stream);
+        }
+        for _ in PRIORITY_STREAMS {
+            pending_cmd.arg("0");
+        }
+
+        let pending_result: Option<redis::Value> = pending_cmd
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| QueueError::Command(e.to_string()))?;
+
+        if let Some(item) = parse_xreadgroup_response(pending_result)? {
+            tracing::debug!(
+                consumer = consumer_name,
+                stream = %item.0,
+                entry_id = %item.1,
+                "Reclaimed pending message"
+            );
+            return Ok(Some(item));
+        }
+
+        // No pending messages — read new ones with >.
         let mut cmd = redis::cmd("XREADGROUP");
         cmd.arg("GROUP").arg(CONSUMER_GROUP).arg(consumer_name);
 
@@ -161,7 +192,6 @@ impl QueueClient {
         for stream in PRIORITY_STREAMS {
             cmd.arg(*stream);
         }
-        // ">" means only new (undelivered) messages.
         for _ in PRIORITY_STREAMS {
             cmd.arg(">");
         }
@@ -361,7 +391,17 @@ fn extract_data_field(fields: &[redis::Value]) -> Option<autosint_common::types:
                 redis::Value::BulkString(b) => String::from_utf8_lossy(b).to_string(),
                 _ => return None,
             };
-            return serde_json::from_str(&data).ok();
+            return match serde_json::from_str(&data) {
+                Ok(msg) => Some(msg),
+                Err(e) => {
+                    tracing::error!(
+                        error = %e,
+                        data = %data,
+                        "Failed to deserialize work order message from Redis stream"
+                    );
+                    None
+                }
+            };
         }
 
         i += 2;

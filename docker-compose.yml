@@ -53,6 +53,20 @@ services:
       retries: 5
       start_period: 5s
 
+  # --- Search ---
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: autosint-searxng
+    volumes:
+      - ./config/searxng:/etc/searxng:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   # --- Core services ---
 
   engine:
@@ -73,6 +87,10 @@ services:
       DATABASE_URL: postgres://autosint:autosint_dev@postgres:5432/autosint
       REDIS_URL: redis://redis:6379
       AUTOSINT_CONFIG_DIR: /config
+      FETCH_BASE_URL: http://fetch:8081
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
     volumes:
       - ./config:/config:ro
     depends_on:
@@ -101,6 +119,10 @@ services:
     environment:
       RUST_LOG: info
       FETCH_PORT: "8081"
+      SEARCH_BACKEND_URL: http://searxng:8080
+    depends_on:
+      searxng:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8081/health || exit 1"]
       interval: 10s

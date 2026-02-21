@@ -23,6 +23,8 @@ pub struct AppState {
     pub cache: Arc<RwLock<UrlCache>>,
     pub rate_limiter: Arc<DomainRateLimiter>,
     pub metrics_handle: PrometheusHandle,
+    /// SearXNG backend URL for web search.
+    pub search_backend_url: String,
 }
 
 #[tokio::main]
@@ -59,6 +61,9 @@ async fn main() {
         .build()
         .expect("Failed to build HTTP client");
 
+    let search_backend_url = std::env::var("SEARCH_BACKEND_URL")
+        .unwrap_or_else(|_| "http://localhost:8888".into());
+
     let state = Arc::new(AppState {
         http,
         cache: Arc::new(RwLock::new(UrlCache::new(Duration::from_secs(
@@ -66,12 +71,14 @@ async fn main() {
         )))),
         rate_limiter: Arc::new(DomainRateLimiter::new(rate_limit)),
         metrics_handle,
+        search_backend_url,
     });
 
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/metrics", get(metrics_handler))
         .route("/fetch", post(routes::fetch_handler))
+        .route("/search", post(routes::search_handler))
         .route("/sources", get(routes::sources_handler))
         .with_state(state);
 

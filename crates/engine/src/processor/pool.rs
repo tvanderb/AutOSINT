@@ -125,11 +125,36 @@ async fn processor_worker_loop(
 ) {
     tracing::info!(consumer = %consumer_name, "Processor worker started");
 
+    // Reclaim stale messages from dead consumers periodically.
+    // min_idle = 2× heartbeat TTL — if a consumer hasn't heartbeated in that long, it's dead.
+    let reclaim_min_idle_ms = (heartbeat_ttl * 2) * 1000;
+    let reclaim_interval = std::time::Duration::from_secs(heartbeat_ttl);
+    let mut last_reclaim = std::time::Instant::now();
+
     loop {
         // Check shutdown.
         if *shutdown_rx.borrow() {
             tracing::info!(consumer = %consumer_name, "Processor worker shutting down");
             break;
+        }
+
+        // Periodically reclaim stale messages from dead consumers.
+        // XCLAIM transfers ownership to this consumer; the next dequeue(ID=0) picks them up.
+        if last_reclaim.elapsed() >= reclaim_interval {
+            match queue.reclaim_pending(&consumer_name, reclaim_min_idle_ms).await {
+                Ok(reclaimed) if !reclaimed.is_empty() => {
+                    tracing::info!(
+                        consumer = %consumer_name,
+                        count = reclaimed.len(),
+                        "Reclaimed stale messages from dead consumers"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(consumer = %consumer_name, error = %e, "Reclaim check failed");
+                }
+                _ => {}
+            }
+            last_reclaim = std::time::Instant::now();
         }
 
         // Try to dequeue a work order (block for 5s to allow periodic shutdown checks).
@@ -225,12 +250,17 @@ async fn processor_worker_loop(
         let _ = hb_handle.await;
 
         // Determine final status and claims count.
-        let (final_status, claims_count) = match &session_result.outcome {
-            crate::llm::session::SessionResult::Completed { .. } => (
-                WorkOrderStatus::Completed,
-                session_result.claims_created as i32,
-            ),
-            _ => (WorkOrderStatus::Failed, 0),
+        // MaxTurnsReached and MalformedToolCallLimit are treated as Completed — partial
+        // progress (entities, claims written to the graph) is still valid and non-transactional.
+        // Only actual errors (Failed) are terminal failures.
+        let claims_count = session_result.claims_created as i32;
+        let final_status = match &session_result.outcome {
+            crate::llm::session::SessionResult::Completed { .. }
+            | crate::llm::session::SessionResult::MaxTurnsReached { .. }
+            | crate::llm::session::SessionResult::MalformedToolCallLimit { .. } => {
+                WorkOrderStatus::Completed
+            }
+            _ => WorkOrderStatus::Failed,
         };
 
         // Update work order status in PG.

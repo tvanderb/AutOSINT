@@ -61,10 +61,10 @@ pub fn handler() -> ToolHandler {
 
             let attribution_depth = match args.claim_attribution_depth.as_str() {
                 "primary" => AttributionDepth::Primary,
-                "secondhand" => AttributionDepth::Secondhand,
+                "secondhand" | "secondary" | "tertiary" => AttributionDepth::Secondhand,
                 other => {
                     return Err(format!(
-                        "Invalid claim_attribution_depth: '{}'. Use 'primary' or 'secondhand'.",
+                        "Invalid claim_attribution_depth: '{}'. Use 'primary', 'secondary', or 'tertiary'.",
                         other
                     ))
                 }

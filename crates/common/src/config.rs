@@ -52,14 +52,23 @@ pub struct LlmConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LlmRoleConfig {
     /// Provider name ("anthropic" or "openai").
+    /// Use "openai" for OpenAI-compatible providers (OpenRouter, Azure, etc.).
     pub provider: String,
-    /// Model identifier (e.g. "claude-opus-4-20250514", "claude-sonnet-4-20250514").
+    /// Model identifier (e.g. "claude-opus-4-20250514", "anthropic/claude-sonnet-4-20250514").
     pub model: String,
     /// Max tokens in the response.
     pub max_tokens: u32,
     /// Temperature (0.0–1.0).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
+    /// Base URL for the API. Defaults to provider's standard URL.
+    /// Override for OpenRouter, Azure, or other compatible endpoints.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    /// Environment variable name for the API key. Defaults to provider's standard env var.
+    /// Override to use a different key source (e.g. `OPENROUTER_API_KEY`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key_env: Option<String>,
 }
 
 /// Embedding pipeline configuration per PLAN.md §11.
@@ -75,6 +84,21 @@ pub struct EmbeddingConfig {
     pub batch_size: u32,
     /// Interval in minutes for background backfill of pending embeddings.
     pub backfill_interval_minutes: u32,
+    /// Base URL for the embedding API. Defaults to `https://api.openai.com/v1`.
+    /// Use `https://openrouter.ai/api/v1` for OpenRouter, etc.
+    #[serde(default = "default_embedding_base_url")]
+    pub base_url: String,
+    /// Environment variable name for the API key. Defaults to "OPENAI_API_KEY".
+    #[serde(default = "default_embedding_api_key_env")]
+    pub api_key_env: String,
+}
+
+fn default_embedding_base_url() -> String {
+    "https://api.openai.com/v1".to_string()
+}
+
+fn default_embedding_api_key_env() -> String {
+    "OPENAI_API_KEY".to_string()
 }
 
 /// Entity deduplication thresholds.

@@ -6,7 +6,6 @@ use super::types::{
 };
 use super::LlmError;
 
-const ANTHROPIC_MESSAGES_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
 // ---------------------------------------------------------------------------
@@ -172,10 +171,11 @@ fn from_wire_response(resp: AnthropicResponse) -> LlmResponse {
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_arguments)]
-/// Send a messages request to the Anthropic API.
+/// Send a messages request to the Anthropic API (or compatible endpoint).
 pub async fn send_messages(
     http: &reqwest::Client,
     api_key: &str,
+    base_url: &str,
     model: &str,
     max_tokens: u32,
     temperature: Option<f64>,
@@ -184,6 +184,8 @@ pub async fn send_messages(
     tools: &[ToolDefinition],
 ) -> Result<LlmResponse, LlmError> {
     let start = std::time::Instant::now();
+
+    let url = format!("{}/v1/messages", base_url.trim_end_matches('/'));
 
     let wire_messages: Vec<AnthropicMessage> = messages.iter().map(to_wire_message).collect();
 
@@ -206,7 +208,7 @@ pub async fn send_messages(
     };
 
     let response = http
-        .post(ANTHROPIC_MESSAGES_URL)
+        .post(&url)
         .header("x-api-key", api_key)
         .header("anthropic-version", ANTHROPIC_VERSION)
         .header("content-type", "application/json")
@@ -220,7 +222,10 @@ pub async fn send_messages(
     metrics::histogram!("llm.api.latency", "provider" => "anthropic", "model" => model.to_string())
         .record(latency);
 
-    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+    if status == reqwest::StatusCode::UNAUTHORIZED
+        || status == reqwest::StatusCode::FORBIDDEN
+        || status == reqwest::StatusCode::PAYMENT_REQUIRED
+    {
         let body = response.text().await.unwrap_or_default();
         return Err(LlmError::Auth(format!("{}: {}", status, body)));
     }

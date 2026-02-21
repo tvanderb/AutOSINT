@@ -6,7 +6,6 @@ use super::types::{
 };
 use super::LlmError;
 
-const OPENAI_CHAT_URL: &str = "https://api.openai.com/v1/chat/completions";
 
 // ---------------------------------------------------------------------------
 // Request wire types
@@ -235,10 +234,12 @@ fn from_wire_response(resp: ChatResponse) -> Result<LlmResponse, LlmError> {
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_arguments)]
-/// Send a chat completion request to the OpenAI API.
+/// Send a chat completion request to an OpenAI-compatible API.
+/// Works with OpenAI, OpenRouter, Azure, and any compatible provider.
 pub async fn send_chat_completion(
     http: &reqwest::Client,
     api_key: &str,
+    base_url: &str,
     model: &str,
     max_tokens: u32,
     temperature: Option<f64>,
@@ -247,6 +248,8 @@ pub async fn send_chat_completion(
     tools: &[ToolDefinition],
 ) -> Result<LlmResponse, LlmError> {
     let start = std::time::Instant::now();
+
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
     let wire_messages = to_wire_messages(system, messages);
 
@@ -271,7 +274,7 @@ pub async fn send_chat_completion(
     };
 
     let response = http
-        .post(OPENAI_CHAT_URL)
+        .post(&url)
         .bearer_auth(api_key)
         .json(&request)
         .send()
@@ -283,7 +286,10 @@ pub async fn send_chat_completion(
     metrics::histogram!("llm.api.latency", "provider" => "openai", "model" => model.to_string())
         .record(latency);
 
-    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+    if status == reqwest::StatusCode::UNAUTHORIZED
+        || status == reqwest::StatusCode::FORBIDDEN
+        || status == reqwest::StatusCode::PAYMENT_REQUIRED
+    {
         let body = response.text().await.unwrap_or_default();
         return Err(LlmError::Auth(format!("{}: {}", status, body)));
     }

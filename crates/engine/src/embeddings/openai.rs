@@ -2,8 +2,6 @@ use serde::{Deserialize, Serialize};
 
 use super::EmbeddingError;
 
-const OPENAI_EMBEDDINGS_URL: &str = "https://api.openai.com/v1/embeddings";
-
 #[derive(Serialize)]
 struct EmbeddingRequest<'a> {
     model: &'a str,
@@ -38,15 +36,19 @@ struct OpenAiErrorDetail {
     message: String,
 }
 
-/// Call the OpenAI /v1/embeddings endpoint.
+/// Call an OpenAI-compatible /v1/embeddings endpoint.
+/// Works with OpenAI, OpenRouter, Azure, and any compatible provider.
 pub async fn call_openai_embeddings(
     http: &reqwest::Client,
     api_key: &str,
+    base_url: &str,
     model: &str,
     dimensions: u32,
     texts: &[String],
 ) -> Result<Vec<Vec<f32>>, EmbeddingError> {
     let start = std::time::Instant::now();
+
+    let url = format!("{}/embeddings", base_url.trim_end_matches('/'));
 
     let request = EmbeddingRequest {
         model,
@@ -55,7 +57,7 @@ pub async fn call_openai_embeddings(
     };
 
     let response = http
-        .post(OPENAI_EMBEDDINGS_URL)
+        .post(&url)
         .bearer_auth(api_key)
         .json(&request)
         .send()

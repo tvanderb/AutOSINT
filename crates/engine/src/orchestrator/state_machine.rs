@@ -340,6 +340,8 @@ impl Orchestrator {
     }
 
     /// Poll until all active work orders for an investigation are resolved.
+    /// On timeout, fails any remaining active work orders and returns Ok
+    /// so the orchestrator can continue (check_all_failed_cycle handles the fallout).
     async fn wait_for_work_orders(&self, id: InvestigationId) -> Result<(), String> {
         let poll_interval = std::time::Duration::from_secs(5);
         let max_wait = std::time::Duration::from_secs(3600); // 1 hour max.
@@ -359,16 +361,67 @@ impl Orchestrator {
 
             if start.elapsed() > max_wait {
                 tracing::error!(remaining = active, "Timed out waiting for work orders");
-                return Err(format!(
-                    "Timed out waiting for {} work orders to complete",
-                    active
-                ));
+
+                // Fail any stuck work orders so the investigation can proceed.
+                if let Err(e) = self.fail_stuck_work_orders(id).await {
+                    tracing::error!(error = %e, "Failed to mark stuck work orders as failed");
+                }
+
+                return Ok(());
             }
 
             tracing::debug!(active = active, "Waiting for work orders");
             metrics::gauge!("work_orders.queue_depth").set(active as f64);
             tokio::time::sleep(poll_interval).await;
         }
+    }
+
+    /// Mark all active (queued/processing) work orders for an investigation as Failed.
+    /// Used when wait_for_work_orders times out — these WOs are stuck and won't complete.
+    async fn fail_stuck_work_orders(&self, id: InvestigationId) -> Result<(), String> {
+        let work_orders = self
+            .store
+            .get_work_orders_by_investigation(id)
+            .await
+            .map_err(|e| format!("Failed to get work orders: {}", e))?;
+
+        let stuck: Vec<_> = work_orders
+            .iter()
+            .filter(|wo| {
+                matches!(
+                    wo.status,
+                    autosint_common::types::WorkOrderStatus::Queued
+                        | autosint_common::types::WorkOrderStatus::Processing
+                )
+            })
+            .collect();
+
+        for wo in &stuck {
+            tracing::warn!(
+                work_order_id = %wo.id,
+                status = ?wo.status,
+                objective = %wo.objective,
+                "Failing stuck work order (timed out)"
+            );
+            if let Err(e) = self
+                .store
+                .update_work_order_status(
+                    wo.id,
+                    &autosint_common::types::WorkOrderStatus::Failed,
+                    None,
+                    None,
+                )
+                .await
+            {
+                tracing::error!(work_order_id = %wo.id, error = %e, "Failed to mark stuck WO");
+            }
+        }
+
+        if !stuck.is_empty() {
+            tracing::warn!(count = stuck.len(), "Marked stuck work orders as failed");
+        }
+
+        Ok(())
     }
 
     /// Check if all work orders in the most recent cycle failed.

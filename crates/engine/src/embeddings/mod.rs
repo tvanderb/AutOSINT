@@ -34,15 +34,18 @@ pub enum EmbeddingError {
 #[allow(dead_code)]
 impl EmbeddingClient {
     /// Create a new embedding client.
-    /// Reads the API key from `OPENAI_API_KEY` env var.
+    /// Reads the API key from the env var specified in config (defaults to OPENAI_API_KEY).
     /// Returns None if the key is not set (graceful degradation).
     pub fn new(config: EmbeddingConfig, retry_config: RetryConfig) -> Option<Self> {
-        let api_key = match std::env::var("OPENAI_API_KEY") {
+        let key_env = &config.api_key_env;
+        let api_key = match std::env::var(key_env) {
             Ok(key) if !key.is_empty() => key,
             _ => {
                 tracing::warn!(
-                    "OPENAI_API_KEY not set — embedding client disabled. \
-                     Entities will be created with embedding_pending = true."
+                    env_var = key_env,
+                    "{} not set — embedding client disabled. \
+                     Entities will be created with embedding_pending = true.",
+                    key_env,
                 );
                 return None;
             }
@@ -97,6 +100,7 @@ impl EmbeddingClient {
             match openai::call_openai_embeddings(
                 &self.http,
                 &self.api_key,
+                &self.config.base_url,
                 &self.config.model,
                 self.config.dimensions,
                 texts,

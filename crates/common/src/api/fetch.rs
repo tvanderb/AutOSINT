@@ -62,6 +62,29 @@ pub struct BrowseResponse {
     pub metadata: FetchMetadata,
 }
 
+/// POST /search request — web search via Fetch service.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SearchRequest {
+    pub query: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub num_results: Option<usize>,
+}
+
+/// POST /search response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SearchResponse {
+    pub query: String,
+    pub results: Vec<SearchResult>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SearchResult {
+    pub url: String,
+    pub title: String,
+    #[serde(default)]
+    pub snippet: String,
+}
+
 /// Source adapter catalog entry from GET /sources.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SourceInfo {

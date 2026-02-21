@@ -84,7 +84,7 @@ pub fn handler() -> ToolHandler {
                 .as_deref()
                 .map(|s| match s {
                     "primary" => Ok(AttributionDepth::Primary),
-                    "secondhand" => Ok(AttributionDepth::Secondhand),
+                    "secondhand" | "secondary" | "tertiary" => Ok(AttributionDepth::Secondhand),
                     other => Err(format!("Invalid attribution_depth: '{}'", other)),
                 })
                 .transpose()?;

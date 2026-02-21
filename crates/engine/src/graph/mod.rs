@@ -126,6 +126,37 @@ pub enum GraphError {
     NotFound(String),
 }
 
+/// Escape Lucene special characters in a fulltext query string.
+/// Characters: + - && || ! ( ) { } [ ] ^ " ~ * ? : \ /
+pub fn escape_lucene_query(input: &str) -> String {
+    let mut escaped = String::with_capacity(input.len() + 8);
+    for c in input.chars() {
+        if matches!(
+            c,
+            '+' | '-'
+                | '!'
+                | '('
+                | ')'
+                | '{'
+                | '}'
+                | '['
+                | ']'
+                | '^'
+                | '"'
+                | '~'
+                | '*'
+                | '?'
+                | ':'
+                | '\\'
+                | '/'
+        ) {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    escaped
+}
+
 impl From<GraphError> for autosint_common::AutOsintError {
     fn from(e: GraphError) -> Self {
         match &e {

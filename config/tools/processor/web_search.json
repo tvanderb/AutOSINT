@@ -1,0 +1,18 @@
+{
+  "name": "web_search",
+  "description": "Search the web for information relevant to your objective. Returns a list of URLs with titles and snippets. Use this to discover sources before fetching them with fetch_url.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "The search query. Be specific and use relevant keywords."
+      },
+      "num_results": {
+        "type": "integer",
+        "description": "Number of results to return (1-10, default 10)."
+      }
+    },
+    "required": ["query"]
+  }
+}

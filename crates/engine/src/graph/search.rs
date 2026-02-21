@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use super::conversions::{
     format_datetime, node_to_claim, node_to_entity, parse_entity_id, relation_to_relationship,
 };
+use super::escape_lucene_query;
 use super::GraphError;
 
 /// How to search: semantic (vector) or keyword (fulltext).
@@ -138,8 +139,9 @@ impl super::GraphClient {
                     where_str
                 );
 
+                let escaped_query = escape_lucene_query(&params.query);
                 let mut q = query(&cypher)
-                    .param("query", params.query.as_str())
+                    .param("query", escaped_query.as_str())
                     .param("limit", limit);
 
                 if let Some(ref kind) = params.kind_filter {
@@ -265,8 +267,9 @@ impl super::GraphClient {
                         where_str
                     );
 
+                    let escaped_query = escape_lucene_query(query_text);
                     let q = query(&cypher)
-                        .param("query", query_text.as_str())
+                        .param("query", escaped_query.as_str())
                         .param("limit", limit);
 
                     let q = self.bind_claim_filter_params(params, q);

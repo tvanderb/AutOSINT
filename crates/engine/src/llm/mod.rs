@@ -55,10 +55,10 @@ impl From<LlmError> for autosint_common::AutOsintError {
 
 impl LlmClient {
     /// Create a new LLM client.
-    /// Reads the API key from the appropriate env var based on provider.
+    /// Reads the API key from the configured env var (or provider default).
     /// Returns None if the key is not set.
     pub fn new(config: LlmRoleConfig, retry_config: RetryConfig) -> Option<Self> {
-        let env_var = match config.provider.as_str() {
+        let default_env_var = match config.provider.as_str() {
             "anthropic" => "ANTHROPIC_API_KEY",
             "openai" => "OPENAI_API_KEY",
             other => {
@@ -66,6 +66,11 @@ impl LlmClient {
                 return None;
             }
         };
+
+        let env_var = config
+            .api_key_env
+            .as_deref()
+            .unwrap_or(default_env_var);
 
         let api_key = match std::env::var(env_var) {
             Ok(key) if !key.is_empty() => key,
@@ -148,9 +153,15 @@ impl LlmClient {
     ) -> Result<LlmResponse, LlmError> {
         match self.config.provider.as_str() {
             "anthropic" => {
+                let base_url = self
+                    .config
+                    .base_url
+                    .as_deref()
+                    .unwrap_or("https://api.anthropic.com");
                 anthropic::send_messages(
                     &self.http,
                     &self.api_key,
+                    base_url,
                     &self.config.model,
                     self.config.max_tokens,
                     self.config.temperature,
@@ -161,9 +172,15 @@ impl LlmClient {
                 .await
             }
             "openai" => {
+                let base_url = self
+                    .config
+                    .base_url
+                    .as_deref()
+                    .unwrap_or("https://api.openai.com/v1");
                 openai::send_chat_completion(
                     &self.http,
                     &self.api_key,
+                    base_url,
                     &self.config.model,
                     self.config.max_tokens,
                     self.config.temperature,
