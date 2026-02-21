@@ -213,6 +213,39 @@ These three fixes were applied before this test:
 
 ---
 
+## Repeat Investigation: Graph as Memory
+
+Immediately after Test #3 completed, the same prompt was submitted again to test whether the Analyst would leverage existing graph knowledge or redundantly create new work orders.
+
+**Investigation ID:** `95b51e45-02ef-4b75-bb28-7c6ad3017d52`
+**Result:** Assessment produced directly from graph — zero work orders.
+
+| Metric | Investigation #1 (empty graph) | Investigation #2 (populated graph) |
+|--------|-------------------------------|-----------------------------------|
+| Cycle count | 1 (WOs + assessment) | 0 (assessment only) |
+| Work orders | 4 | **0** |
+| Analyst turns | 12 + 11 = 23 | **9** |
+| Analyst tool calls | 11 + 10 = 21 | **8** |
+| Total time | ~19 min | **~2.5 min** |
+| Assessment confidence | Moderate | Moderate |
+
+### What the Analyst Did
+
+1. `search_entities` — returned 6,231 chars (vs 14 on empty graph)
+2. `search_claims` — returned 9,972 chars of existing claims
+3. `search_assessments` — returned 14 (previous assessment is in PG, not the graph)
+4. `get_investigation_history` — no prior WOs for this investigation ID
+5. `search_claims` (second query) — 4,621 chars, different search terms
+6. `traverse_relationships` — 4,566 chars of relationship data
+7. `search_claims` (third query) — 14 chars (exhausted relevant claims)
+8. `produce_assessment` — produced assessment directly
+
+The Analyst correctly determined that the graph already contained sufficient, diverse, recent evidence to answer the question. It explored entities, claims, and relationships across multiple queries, then produced the assessment without creating any work orders.
+
+This validates the core architectural premise: **the knowledge graph is the Analyst's memory across investigations.** Repeated or related questions benefit from prior research without redundant web fetching.
+
+---
+
 ## Known Issues / Observations
 
 1. **Government site blocking** — 5 Australian government URLs returned 502. These sites likely block non-browser user agents. The Fetch service's browser sidecar (M5) would address this.
@@ -220,3 +253,4 @@ These three fixes were applied before this test:
 3. **pool_size=1** — Sequential processing means 4 WOs took ~17 minutes. With pool_size=2-3, this would be ~6-8 minutes.
 4. **All claims "secondhand"** — Appropriate for web-sourced published reporting. Primary attribution would require direct interviews or official documents fetched from original sources.
 5. **Assessment quality** — The competing hypotheses analysis is genuinely useful, with specific evidence cited for each hypothesis. The "gaps" and "forward indicators" sections demonstrate proper analytical tradecraft.
+6. **Assessment search gap** — The Analyst's `search_assessments` returned empty (14 chars) despite a prior assessment existing. Assessments live in PostgreSQL, not Neo4j — the search tool may need to also query the store for prior assessments on related topics.
