@@ -1,6 +1,6 @@
 {
   "name": "search_claims",
-  "description": "Search claims in the knowledge graph. Supports semantic search, temporal filtering, source filtering, and entity filtering. All parameters are optional — combine as needed for precise queries.",
+  "description": "Search claims in the knowledge graph. Supports semantic search, temporal filtering, source filtering, entity filtering, and classification filtering. All parameters are optional — combine as needed for precise queries.",
   "input_schema": {
     "type": "object",
     "properties": {
@@ -26,8 +26,13 @@
       },
       "attribution_depth": {
         "type": "string",
-        "enum": ["primary", "secondhand"],
-        "description": "Filter by attribution depth."
+        "enum": ["primary", "secondhand", "indirect"],
+        "description": "Filter by attribution depth. 'primary' = direct source. 'secondhand' = named intermediary. 'indirect' = anonymous/thirdhand."
+      },
+      "information_type": {
+        "type": "string",
+        "enum": ["assertion", "analysis", "discourse", "testimony"],
+        "description": "Filter by information type. 'assertion' = factual claims. 'analysis' = judgments/predictions. 'discourse' = public discussion. 'testimony' = personal accounts."
       },
       "sort_by": {
         "type": "string",

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use autosint_common::types::{AttributionDepth, Claim};
+use autosint_common::types::{AttributionDepth, Claim, InformationType};
 use autosint_common::EntityId;
 
 use crate::graph::conversions::{embedding_text_for_claim, embedding_text_for_entity};
@@ -20,6 +20,8 @@ struct Args {
     claim_published_timestamp: String,
     #[serde(default = "default_attribution")]
     claim_attribution_depth: String,
+    #[serde(default = "default_information_type")]
+    claim_information_type: String,
     #[serde(default)]
     claim_raw_source_link: Option<String>,
     /// Entity update fields (at least one required).
@@ -39,6 +41,10 @@ struct Args {
 
 fn default_attribution() -> String {
     "secondhand".to_string()
+}
+
+fn default_information_type() -> String {
+    "assertion".to_string()
 }
 
 pub fn handler() -> ToolHandler {
@@ -61,10 +67,24 @@ pub fn handler() -> ToolHandler {
 
             let attribution_depth = match args.claim_attribution_depth.as_str() {
                 "primary" => AttributionDepth::Primary,
-                "secondhand" | "secondary" | "tertiary" => AttributionDepth::Secondhand,
+                "secondhand" | "secondary" => AttributionDepth::Secondhand,
+                "indirect" | "tertiary" => AttributionDepth::Indirect,
                 other => {
                     return Err(format!(
-                        "Invalid claim_attribution_depth: '{}'. Use 'primary', 'secondary', or 'tertiary'.",
+                        "Invalid claim_attribution_depth: '{}'. Use 'primary', 'secondhand', or 'indirect'.",
+                        other
+                    ))
+                }
+            };
+
+            let information_type = match args.claim_information_type.as_str() {
+                "assertion" => InformationType::Assertion,
+                "analysis" => InformationType::Analysis,
+                "discourse" => InformationType::Discourse,
+                "testimony" => InformationType::Testimony,
+                other => {
+                    return Err(format!(
+                        "Invalid claim_information_type: '{}'. Use 'assertion', 'analysis', 'discourse', or 'testimony'.",
                         other
                     ))
                 }
@@ -142,6 +162,7 @@ pub fn handler() -> ToolHandler {
                 args.claim_content,
                 published_timestamp,
                 attribution_depth,
+                information_type,
                 source_entity_id,
             );
             claim.referenced_entity_ids = vec![entity_id];

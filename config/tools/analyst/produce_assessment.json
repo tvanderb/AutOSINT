@@ -1,36 +1,109 @@
 {
   "name": "produce_assessment",
-  "description": "Produce the final intelligence assessment for this investigation. This is the analytical product — your synthesis of all gathered information. Once called, the investigation completes. Must include structured reasoning, explicit confidence level, evidence references, identified gaps, and competing hypotheses where applicable.",
+  "description": "Produce the final intelligence assessment for this investigation. This is the analytical product — your synthesis of all gathered information. Once called, the investigation completes. Must include structured reasoning, inline source evaluation, explicit confidence with named factors, probability-weighted competing hypotheses, and linked forward indicators.",
   "input_schema": {
     "type": "object",
     "properties": {
       "content": {
         "type": "object",
-        "description": "Structured assessment content. Should include: 'summary' (key findings), 'analysis' (detailed reasoning), 'competing_hypotheses' (alternative explanations), 'gaps' (what remains unknown), 'forward_indicators' (what to watch for), 'sources_evaluated' (quality assessment of evidence base).",
+        "description": "Structured assessment content.",
         "properties": {
-          "summary": { "type": "string", "description": "Executive summary of key findings." },
-          "analysis": { "type": "string", "description": "Detailed analytical reasoning." },
+          "summary": {
+            "type": "string",
+            "description": "Executive summary of key findings in 2-4 sentences."
+          },
+          "analysis": {
+            "type": "string",
+            "description": "Full analytical text with inline source evaluation and [n] citation markers. Every substantive statement carries its sourcing chain woven into the prose. Not 'Source X says Y' but 'According to Source X, which is [structural characterization], Y — corroborated by Source Z via independent reporting.'"
+          },
           "competing_hypotheses": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "hypothesis": { "type": "string" },
-                "supporting_evidence": { "type": "string" },
-                "weaknesses": { "type": "string" }
-              }
+                "hypothesis": { "type": "string", "description": "Description of the hypothesis." },
+                "probability": { "type": "number", "description": "Probability estimate (0.0-1.0). All hypotheses should sum to approximately 1.0." },
+                "reasoning": { "type": "string", "description": "Why this probability — names specific evidence for and against, source quality factors, and what would change this estimate." },
+                "supporting_evidence": { "type": "string", "description": "Key evidence with [n] citation markers." },
+                "weaknesses": { "type": "string", "description": "What undermines this hypothesis." },
+                "claim_refs": { "type": "array", "items": { "type": "string" }, "description": "UUIDs of claims supporting this hypothesis." }
+              },
+              "required": ["hypothesis", "probability", "reasoning", "supporting_evidence", "weaknesses", "claim_refs"]
             },
-            "description": "Alternative explanations considered."
+            "description": "Alternative explanations considered, with probability weights."
           },
-          "gaps": { "type": "array", "items": { "type": "string" }, "description": "What remains unknown or uncertain." },
-          "forward_indicators": { "type": "array", "items": { "type": "string" }, "description": "Observable events that would confirm or refute this assessment." },
-          "sources_evaluated": { "type": "string", "description": "Assessment of the evidence base quality and coverage." }
-        }
+          "confidence_reasoning": {
+            "type": "string",
+            "description": "Names specific factors: source diversity and independence, primary vs secondhand ratio, temporal freshness of evidence, corroboration patterns, structural information known/unknown about sources, source access limitations encountered."
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "marker": { "type": "string", "description": "Citation marker used in text (e.g. '[1]')." },
+                "claim_id": { "type": "string", "description": "UUID of the referenced claim." },
+                "source_url": { "type": "string", "description": "URL of the original source." },
+                "source_name": { "type": "string", "description": "Name of the publication/outlet." },
+                "source_entity_id": { "type": "string", "description": "UUID of the source entity in the graph." },
+                "date": { "type": "string", "description": "Publication date." },
+                "attribution_depth": { "type": "string", "enum": ["primary", "secondhand", "indirect"], "description": "Chain of custody." }
+              },
+              "required": ["marker", "claim_id", "source_url", "source_name", "source_entity_id", "date", "attribution_depth"]
+            },
+            "description": "Reference index linking citation markers to claims and sources."
+          },
+          "sources_evaluated": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source_entity_id": { "type": "string", "description": "UUID of the source entity." },
+                "source_name": { "type": "string", "description": "Publication name." },
+                "structural_profile": { "type": "string", "description": "Observable facts: ownership, funding model, geographic base, editorial focus — ONLY from fetched source material, not LLM memory." },
+                "profile_basis": { "type": "string", "description": "What was fetched to determine this profile (e.g. 'about page', 'Wikipedia entry') or 'no structural information available'." },
+                "claims_used": { "type": "integer", "description": "Number of claims from this source used in the assessment." },
+                "primary_vs_secondhand": { "type": "string", "description": "Breakdown of attribution depth for claims from this source." },
+                "sourcing_chain_notes": { "type": "string", "description": "Whether multiple claims trace to the same original source. Corroboration independence assessment." }
+              },
+              "required": ["source_entity_id", "source_name", "structural_profile", "profile_basis", "claims_used", "primary_vs_secondhand", "sourcing_chain_notes"]
+            },
+            "description": "Structured evaluation of each source relied upon."
+          },
+          "gaps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "description": { "type": "string", "description": "Specific intelligence gap." },
+                "impact": { "type": "string", "description": "How this gap affects confidence or completeness." },
+                "suggested_resolution": { "type": "string", "description": "What kind of source or investigation would fill this gap." }
+              },
+              "required": ["description", "impact", "suggested_resolution"]
+            },
+            "description": "What remains unknown or uncertain."
+          },
+          "forward_indicators": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "description": { "type": "string", "description": "What to watch for." },
+                "entity_refs": { "type": "array", "items": { "type": "string" }, "description": "UUIDs of related entities." },
+                "claim_refs": { "type": "array", "items": { "type": "string" }, "description": "UUIDs of claims that establish why this matters." },
+                "trigger_implication": { "type": "string", "description": "What it means for the assessment if this indicator fires." }
+              },
+              "required": ["description", "entity_refs", "claim_refs", "trigger_implication"]
+            },
+            "description": "Observable events that would confirm or refute this assessment."
+          }
+        },
+        "required": ["summary", "analysis", "competing_hypotheses", "confidence_reasoning", "citations", "sources_evaluated", "gaps", "forward_indicators"]
       },
       "confidence": {
         "type": "string",
         "enum": ["high", "moderate", "low"],
-        "description": "Overall confidence in the assessment. 'high' = strong evidence, multiple corroborating sources. 'moderate' = reasonable evidence with some gaps. 'low' = limited evidence, significant uncertainty."
+        "description": "Overall confidence in the assessment. 'high' = strong evidence, multiple corroborating independent sources. 'moderate' = reasonable evidence with gaps or credible competing hypotheses. 'low' = limited evidence, significant uncertainty."
       },
       "entity_refs": {
         "type": "array",

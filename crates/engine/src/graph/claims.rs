@@ -1,6 +1,6 @@
 use neo4rs::query;
 
-use autosint_common::types::{AttributionDepth, Claim};
+use autosint_common::types::{AttributionDepth, Claim, InformationType};
 use autosint_common::ClaimId;
 
 use super::conversions::{format_datetime, node_to_claim, parse_entity_id};
@@ -47,6 +47,14 @@ impl super::GraphClient {
         let attribution_depth_str = match claim.attribution_depth {
             AttributionDepth::Primary => "primary",
             AttributionDepth::Secondhand => "secondhand",
+            AttributionDepth::Indirect => "indirect",
+        };
+
+        let information_type_str = match claim.information_type {
+            InformationType::Assertion => "assertion",
+            InformationType::Analysis => "analysis",
+            InformationType::Discourse => "discourse",
+            InformationType::Testimony => "testimony",
         };
 
         let published_ts = format_datetime(&claim.published_timestamp);
@@ -67,6 +75,7 @@ impl super::GraphClient {
                 published_timestamp: $published_timestamp, \
                 ingested_timestamp: $ingested_timestamp, \
                 attribution_depth: $attribution_depth, \
+                information_type: $information_type, \
                 embedding_pending: $embedding_pending \
             })",
         );
@@ -86,6 +95,7 @@ impl super::GraphClient {
             .param("published_timestamp", published_ts.as_str())
             .param("ingested_timestamp", ingested_ts.as_str())
             .param("attribution_depth", attribution_depth_str)
+            .param("information_type", information_type_str)
             .param("embedding_pending", embedding_pending);
 
         if let Some(ref link) = claim.raw_source_link {

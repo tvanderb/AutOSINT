@@ -94,6 +94,25 @@ We don't encode analytical logic in code. We build the infrastructure — storag
 
 We do NOT predefine source reliability tiers. Sources are entities in the knowledge graph — with ownership, track record, incentive structures, geographic base, and relationships. The LLM assesses reliability by traversing this information, not by reading a predefined tier label. This means the system can discover things like: "this outlet is owned by this conglomerate, which has a stake in this industry, and this article is about regulation of that industry" — without anyone hardcoding that bias.
 
+### Graph Integrity Over Completeness
+
+The knowledge graph is the system's most valuable long-term asset. LLM hallucination is the primary existential threat to it. Every fact in the graph — every entity property, every claim, every relationship — must trace to a fetched, verifiable source document. The LLM reasons freely over what it reads, but it never introduces facts from its own parametric memory into the graph.
+
+**The sharp boundary:**
+- **LLM reasoning (permitted):** Deciding what's important in a document. Identifying connections between entities mentioned in the source. Weighing evidence. Structuring claims for clarity. Formulating hypotheses. Deciding what to investigate next.
+- **LLM memory (prohibited in graph writes):** Filling in entity properties not stated in the source document. Asserting facts about entities from training data. "Enriching" entities with biographical details, titles, or roles not mentioned in the fetched content. Asserting relationships not evidenced in source material.
+
+**An incomplete graph is correct. Fabricated completeness is corruption.** A stub entity with just a name and a source link is better than a fully populated entity with unverifiable properties. The stub honestly says "we know this exists because Source X mentioned it." The enriched entity looks complete but may be partially fabricated — and once in the graph, future Analysts treat it as researched fact.
+
+**Why this matters:** Graph poisoning compounds silently. A hallucinated entity property gets cited in an assessment. That assessment informs future work orders. Those work orders produce claims anchored to the hallucinated fact. Each layer looks grounded because it references the layer below — but the foundation is fabricated. Over hundreds of investigations, these contaminations erode the system's institutional knowledge from within. The damage is invisible until something relies on corrupted data for a high-stakes judgment.
+
+**Practical implications:**
+- Entity summaries contain only information from fetched sources. If a document mentions a person by name only, the summary is "Mentioned in [source] as [context]" — not a biography from LLM memory.
+- Entity properties come only from source documents. No document mention of a role means no role property. It gets populated when a future Processor encounters a document that explicitly states it.
+- Source entities (publications, outlets) are built from fetched structural information — about pages, Wikipedia entries, corporate registries — not from LLM reputation assertions.
+- Corroboration across independent sources is the primary trust mechanism, not assertions about individual source reliability.
+- The system prioritizes building trustworthy institutional knowledge over time. Early investigations produce thinner, more honest output. The twentieth investigation on a topic has dense, corroborated, multi-source evidence. This accumulation is the system's competitive moat.
+
 ### All Numeric Parameters are Runtime-Configurable
 
 No numeric limit, threshold, or tuning parameter is hardcoded into compiled code. Safety limits (max cycles, max turns, max work orders), concurrency parameters (Processor pool size, browser context cap), retry counts, backoff intervals, timeouts, cache TTLs, tool result size limits, embedding dimensions — all configurable at runtime. The right values for these are discovered empirically by running the system, not by guessing upfront. A recompile-to-test-a-different-number iteration loop is unacceptable for the kind of rapid tuning this system requires.
@@ -194,10 +213,10 @@ Analyst writes assessments to Assessment Store
 - `canonical_name` — primary name
 - `aliases` — alternative names (list)
 - `kind` — loose descriptive label ("organization", "person", "country", "resource", "facility", etc.). This is NOT a rigid type that determines schema. It's a human-readable hint. The kind does not control what fields exist.
-- `summary` — LLM-generated living summary, periodically refreshed. Quick-reference orientation, not analysis.
+- `summary` — Living summary built exclusively from fetched source material. Quick-reference orientation, not analysis. If a source document only mentions an entity's name in passing, the summary reflects only that: "Mentioned in [source] in the context of [topic]." Summaries grow richer as more sources reference the entity. The Processor must never fill in summary content from its own knowledge.
 - `last_updated` — timestamp of last modification
 
-**Additional properties**: the LLM can attach whatever properties it deems relevant. Some entities get 2 additional properties, some get 20. That's the LLM's editorial judgment. Properties are freeform key-value pairs.
+**Additional properties**: the LLM can attach properties it encounters in source documents. Some entities get 2 additional properties, some get 20 — that depends on what the source material contains, not on what the LLM knows from training. Properties are freeform key-value pairs. **Every property must be grounded in a fetched document.** If a source doesn't mention a person's title, party affiliation, birth year, or any other detail, those properties are not added — regardless of whether the LLM "knows" them. Incomplete entities with verified properties are correct. Entities enriched from LLM memory are corrupted.
 
 **Entities hold current state only.** History lives in claims. When an entity changes (rebrand, leadership change, acquisition), the entity record is updated to reflect current reality. The change itself is captured as a claim.
 
@@ -244,18 +263,29 @@ How new information enters the system. Claims are the raw input that the Analyst
 - `referenced_entities` — which entities this claim is about (linked to graph)
 - `content` — the information itself (LLM-decided format and depth)
 - `raw_source_link` — URL/reference back to the original document
-- `attribution_depth` — primary source vs secondhand
+- `attribution_depth` — chain of custody from original source (see below)
+- `information_type` — nature of the information (see below)
 
 **Key principles:**
 
 **Claims are units of information, not text.** A 50-page SEC filing (dense with factual data) produces many claims. A 1,500-word news article might produce only 3. Claims scale with information density, not word count. The Processor's job is to reduce documents to their essential informational content while preserving richness — extracting the signal, discarding the filler (narrative, scene-setting, restatement of known context, opinion framing).
 
-**Claims carry attribution depth.** A primary source claim (the actual statement, the actual filing, the actual data) is fundamentally different from a secondhand claim. When a source reports another source's statement without direct quotes, the claim must note the intermediary:
+**Claims are classified on two independent dimensions.** The Processor must explicitly categorize every claim on both dimensions at extraction time. This forced classification prevents the path-of-least-resistance problem where the LLM treats all information as equivalent. The categorization is the LLM's judgment; the requirement to categorize is ours.
 
-- Primary: "In SEC filing dated [date], TSMC reported revenue of $23.5B"
-- Secondhand: "*According to Reuters,* Russia's foreign ministry described the sanctions as economic warfare"
+**Dimension 1 — Attribution depth** (chain of custody):
+- **`primary`**: Direct from the entity. Official documents, official social media accounts, filed data, parliamentary records, the actual source material. "In SEC filing dated [date], TSMC reported revenue of $23.5B."
+- **`secondhand`**: Named intermediary reporting on primary source material. Journalism, named expert analysis, reporting that cites specific sources. "*According to Reuters,* Russia's foreign ministry described the sanctions as economic warfare."
+- **`indirect`**: Anonymous sources, unnamed officials, thirdhand reporting, unverified identities. Information that may be valuable but cannot be traced to a verifiable origin. "Sources familiar with the matter say the Pentagon review will recommend changes."
 
-The Analyst uses attribution depth to judge when it needs to seek primary sources. Secondhand claims are useful for awareness but should not be the sole basis for assessments without corroboration or primary source verification.
+**Dimension 2 — Information type** (how the source presents the information — describes form, not truth value):
+- **`assertion`**: The source presents this as a factual claim about the world. Events, data points, official statements, observable facts. "The program costs $368B." "Australia signed the agreement in March 2023." The label means "the source asserts this as fact" — NOT that the system endorses it as true. The Analyst must still evaluate the assertion given the source's structural profile, incentives, and corroboration.
+- **`analysis`**: The source presents this as judgment, assessment, prediction, or evaluative opinion. Someone applying reasoning to facts. "The timeline is likely to slip due to workforce shortages." "The review signals US concern about viability."
+- **`discourse`**: Observations about collective reaction, public discussion, opinion trends. Not what the world IS but what people THINK about it. "Public opinion in Australia has turned against AUKUS spending." "Defense forum participants express skepticism."
+- **`testimony`**: Personal accounts from individuals claiming direct experience or proximity. Potentially high-value signal but unverifiable through normal channels. "Self-identified shipyard worker reports recruitment is behind targets."
+
+These dimensions are independent. An official government press release is `primary` + `assertion` — the government is directly asserting this as fact, which the Analyst must still evaluate for political messaging incentives. A defense analyst writing "I think the timeline will slip" is `secondhand` + `analysis`. An anonymous Reddit user claiming "I work at the shipyard and we're way behind" is `indirect` + `testimony`. A poll showing "60% support AUKUS" reported by a journalist is `secondhand` + `discourse`. The two dimensions together enable powerful Analyst queries: "primary assertions about timelines" is a very different retrieval from "all discourse about program costs."
+
+The Analyst uses attribution depth and information type together to build the evidentiary foundation of assessments — but neither dimension pre-judges reliability. A `primary` + `assertion` claim from a government with strong incentive to present favorable data requires the same critical evaluation as any other claim. The labels describe provenance and form; the Analyst determines trust.
 
 **Dual timestamps are critical.** A Processor might process a 6-month-old article today. The published timestamp (6 months ago) tells the Analyst how current the information is. The ingested timestamp (today) tells when the system became aware. The Analyst is guided to consider temporal relevance per-claim, per-topic: "is information from this long ago still relevant for this particular topic?" A country's borders from 6 months ago — probably still valid. A company's CEO from 6 months ago — might have changed.
 
@@ -263,22 +293,77 @@ The Analyst uses attribution depth to judge when it needs to seek primary source
 
 #### Assessments (in Assessment Store)
 
-The Analyst's analytical products. Distinct from claims — these are the system's synthesis, not raw information.
+The Analyst's analytical products. Distinct from claims — these are the system's synthesis, not raw information. Assessments are where the LLM's reasoning capability is the product — the Analyst reasons over graph contents to produce intelligence. Unlike graph writes, assessments are analytical judgment, not factual claims about the world.
 
-**Contents:**
-- Conclusions with explicit reasoning
-- Confidence levels (high, moderate, low — with explanation of why)
-- References to supporting graph entities and claims by ID
-- Intelligence gaps — what the Analyst doesn't know and couldn't find
-- Competing hypotheses with relative likelihood assessments
-- Forward-looking indicators — what to watch for that would change the assessment
+**Assessment content schema** (JSONB):
+
+```json
+{
+  "summary": "Executive summary. 2-4 sentences.",
+  "analysis": "Full analytical text with inline source evaluation and [n] citation markers. Every substantive statement carries its sourcing chain and the Analyst's evaluation of that chain woven into the prose. Not 'Source X says Y' but 'According to Source X, which is [structural characterization], Y — corroborated by Source Z via independent reporting, though both ultimately trace to [primary source].'",
+  "competing_hypotheses": [
+    {
+      "hypothesis": "Description of the hypothesis",
+      "probability": 0.45,
+      "reasoning": "Why this probability — names the specific evidence for and against, source quality factors, and what would change this estimate",
+      "supporting_evidence": "Key evidence with [n] citation markers",
+      "weaknesses": "What undermines this hypothesis",
+      "claim_refs": ["claim_id_1", "claim_id_2"]
+    }
+  ],
+  "confidence": "high | moderate | low",
+  "confidence_reasoning": "Names specific factors: source diversity and independence, primary vs secondhand sourcing ratio, temporal freshness of evidence, corroboration patterns, what structural information is known or unknown about the sources relied upon, and what source access limitations were encountered",
+  "citations": [
+    {
+      "marker": "[1]",
+      "claim_id": "uuid",
+      "source_url": "https://...",
+      "source_name": "Name of publication",
+      "source_entity_id": "uuid of source entity in graph",
+      "date": "2024-11-15",
+      "attribution_depth": "primary | secondhand"
+    }
+  ],
+  "sources_evaluated": [
+    {
+      "source_entity_id": "uuid",
+      "source_name": "Publication name",
+      "structural_profile": "Observable facts: ownership, funding model, geographic base, editorial focus, age — ONLY from fetched source material, not LLM memory",
+      "profile_basis": "What was fetched to determine this profile (e.g., 'about page', 'Wikipedia entry') or 'no structural information available'",
+      "claims_used": 13,
+      "primary_vs_secondhand": "all secondhand",
+      "sourcing_chain_notes": "Whether multiple claims trace to the same original source, corroboration independence assessment"
+    }
+  ],
+  "gaps": [
+    {
+      "description": "Specific intelligence gap",
+      "impact": "How this gap affects confidence or completeness",
+      "suggested_resolution": "What kind of source or investigation would fill this gap"
+    }
+  ],
+  "forward_indicators": [
+    {
+      "description": "What to watch for",
+      "entity_refs": ["entity_id_1", "entity_id_2"],
+      "claim_refs": ["claim_that_establishes_why_this_matters"],
+      "trigger_implication": "What it means for the assessment if this indicator fires"
+    }
+  ]
+}
+```
+
+**Source evaluation is integral, not separate.** The analysis text itself must weave source characterization into every substantive statement. The `sources_evaluated` array provides structured metadata, but the analytical prose is where the Analyst demonstrates its reasoning about source quality. Source structural profiles must be built from fetched information (about pages, corporate registries, Wikipedia entries) — never from LLM memory assertions about source reputation. When structural information is unavailable, the Analyst states this explicitly: "We have no independently verified information about this publication's ownership or editorial practices."
+
+**Corroboration is the primary trust mechanism.** Rather than asserting "Source X is reliable," the Analyst evaluates whether independent sources — meaning different ownership, different geographic base, different editorial incentive, different sourcing chains — agree. Three sources reporting the same fact is not corroboration if all three cite the same press release. The Analyst must trace sourcing chains and be explicit about true independence vs. common-origin reporting.
 
 **Assessments are always produced.** Even when the investigation yields insufficient data or irreconcilable contradictions, the Analyst produces an honest assessment stating its limitations:
 - "We assess with low confidence that X, based on limited sourcing..."
 - "Key intelligence gap: no reliable primary sources on Y"
 - "Sources conflict on Z — Source A claims [this], Source B claims [that]. We cannot adjudicate with available information."
+- "Our source structural profiles are thin — we could not verify ownership or editorial practices for 4 of 6 publications relied upon."
 
-An assessment that honestly says "I don't know, and here's specifically what I don't know and why" is a complete, valuable product.
+An assessment that honestly says "I don't know, and here's specifically what I don't know and why" is a complete, valuable product. Incomplete honest assessments build trust. Confident-sounding assessments built on unexamined sources erode it.
 
 ### 4.4 Database Schemas
 
@@ -310,7 +395,8 @@ An assessment that honestly says "I don't know, and here's specifically what I d
   published_timestamp: DateTime,
   ingested_timestamp:  DateTime,
   raw_source_link:     String,
-  attribution_depth:   String,   // "primary" or "secondhand"
+  attribution_depth:   String,   // "primary", "secondhand", or "indirect"
+  information_type:    String,   // "assertion", "analysis", "discourse", or "testimony"
   embedding:           [Float],  // vector for semantic search (content)
 })
 ```
@@ -347,6 +433,7 @@ For bidirectional relationships, one edge is stored with `bidirectional: true`; 
 | Vector | :Claim | embedding | Semantic claim search |
 | Range | :Claim | published_timestamp | Temporal filtering/sorting |
 | Range | :Claim | ingested_timestamp | Temporal filtering |
+| Range | :Claim | information_type | Classification filtering |
 | Uniqueness | :Claim | id | Integrity |
 | Full-text | :RELATES_TO | description | Keyword relationship search |
 | Vector | :RELATES_TO | embedding | Semantic relationship search |
@@ -365,7 +452,7 @@ Embeddings computed at write time via embedding API, stored as node/relationship
 CREATE TABLE assessments (
     id               UUID PRIMARY KEY,
     investigation_id UUID NOT NULL REFERENCES investigations(id),
-    content          JSONB NOT NULL,     -- structured assessment (schema TBD with prompt engineering)
+    content          JSONB NOT NULL,     -- structured assessment (schema defined in §4.3 Assessments)
     confidence       TEXT NOT NULL,      -- high / moderate / low
     entity_refs      JSONB NOT NULL,     -- array of Neo4j entity IDs
     claim_refs       JSONB NOT NULL,     -- array of Neo4j claim IDs
@@ -400,14 +487,14 @@ CREATE TABLE work_orders (
 
 -- Indexes
 CREATE INDEX idx_assessments_embedding ON assessments
-    USING ivfflat (embedding vector_cosine_ops);
+    USING hnsw (embedding vector_cosine_ops);  -- HNSW over ivfflat: no probe tuning, works at low row counts
 CREATE INDEX idx_assessments_investigation ON assessments(investigation_id);
 CREATE INDEX idx_investigations_status ON investigations(status);
 CREATE INDEX idx_work_orders_investigation ON work_orders(investigation_id);
 CREATE INDEX idx_work_orders_status ON work_orders(status);
 ```
 
-Entity/claim refs stored as JSONB arrays (not join tables) — these are cross-database references to Neo4j IDs with no FK constraint possible. Primary assessment query pattern is semantic search, not entity-based lookup. Assessment `content` JSONB schema will be defined alongside Analyst prompt engineering.
+Entity/claim refs stored as JSONB arrays (not join tables) — these are cross-database references to Neo4j IDs with no FK constraint possible. Primary assessment query pattern is semantic search, not entity-based lookup. Assessment `content` JSONB schema is defined in §4.3 Assessments above.
 
 #### Redis Schema (Work Order Queue)
 
@@ -445,19 +532,25 @@ One consumer group (`processors`) per stream. Processors check high → normal �
 
 **Role:** Discovery and consolidation worker. The Analyst's hands.
 
-**Two-phase job:**
+**Three-phase workflow:**
 
-1. **Discovery** (guided by work order): Finds documents relevant to the work order's objective. Uses the data source hierarchy via AutOSINT Fetch:
-   - First: Fetch hardcoded source adapters (structured APIs — most reliable)
-   - Second: Fetch raw HTTP (simple web pages not yet programmed as adapters)
-   - Last resort: Fetch browser automation (JavaScript-heavy, anti-bot, login-required)
+1. **Plan** (2-3 turns): Before making any tool calls, the Processor plans 6-10 diverse search queries targeting different source types for the work order objective. "For AUKUS submarine timelines, I need: official government documents (site:defence.gov.au, site:gov.uk), think tank analysis (site:aspi.org.au, CSIS AUKUS), parliamentary records, defense industry reporting, wire service coverage." This structured planning step prevents the path-of-least-resistance problem where the Processor finds one source and immediately starts extracting. Structure forces thinking.
 
-2. **Extraction** (comprehensive, NOT scoped to work order): Extracts ALL key claims from every document found. This is critical — extraction is not limited to what the work order asked about. If the work order was "find military installations near Djibouti" and the Processor finds an article that also mentions a new pipeline project, it extracts the pipeline claim too. The Processor's value is turning full documents into rich, dense, structured claims without filler.
+2. **Research** (15-20 turns): Execute the planned searches via web search + fetch. Evaluate search results for source diversity before fetching — prefer sources not yet collected, prefer primary documents over secondhand reporting, prefer named institutional sources. Follow citation chains: if an article references a RAND report, search for or fetch that report directly. Accumulate a working set of 8-15 documents from diverse source types. Use site-specific queries (e.g., `site:aph.gov.au AUKUS committee`), filetype queries (e.g., `AUKUS budget filetype:pdf`), and source-targeted queries to reach beyond what general web search surfaces. Also fetch source about/info pages for structural profiling (see Source Entity Enrichment below). Web search + fetch is the primary research method — a skilled researcher can find diverse, high-quality sources through query tuning alone. Structured source adapters (M5) supplement this but are not prerequisites for quality.
+
+3. **Extraction** (remaining turns, comprehensive, NOT scoped to work order): Process each fetched document systematically. Extract ALL key claims — not limited to what the work order asked about. If the work order was "find military installations near Djibouti" and the Processor finds an article that also mentions a new pipeline project, it extracts the pipeline claim too. Use batch extraction to process each document in 1-2 turns rather than creating claims individually. The Processor's value is turning full documents into rich, dense, structured claims without filler.
+
+**Batch extraction:** The Processor should extract all claims from a document in a single structured tool call rather than creating entities, claims, and relationships one at a time. A batch extraction tool accepts a source entity, an array of claims with their referenced entities and relationships, and handles dedup, entity creation, claim creation, and relationship creation internally. This reduces extraction from ~4 turns per claim to ~1-2 turns per document, freeing the majority of the turn budget for research. The turn budget should be spent finding diverse sources, not on mechanical graph-write overhead.
 
 **What the Processor does NOT do:**
 - Analyze or assess significance
 - Make strategic judgments about what's important
 - Decide what to investigate next (that's the Analyst)
+- Introduce facts from its own training data into the graph (see §2 Graph Integrity Over Completeness)
+
+**Grounding discipline:** The Processor records ONLY information explicitly stated in fetched source documents. If a document mentions a person by name only, the Processor creates a stub entity with that name — it does not fill in biographical details, titles, roles, or affiliations from its own knowledge. If a document references an organization without describing its structure, the entity gets no structural properties. This discipline is the primary defense against graph poisoning. The Processor's editorial judgment applies to what to extract from the document and how to structure it — never to supplementing the document with external knowledge.
+
+**Source entity enrichment:** When a Processor encounters a new publication or source, it should fetch the source's own about/info page (if available) and create the source entity from that fetched content. Ownership, editorial focus, geographic base, and funding model are structural facts that can be recorded from the source's self-description. This provides the Analyst with grounded source profiles for evaluation. If the source's about page cannot be fetched, the source entity remains thin — that's correct.
 
 **Deduplication:** The Processor's hardest mechanical job. Before creating a new entity, it searches the graph for existing matches. Cascading approach (string matching → embedding similarity → LLM judgment).
 
@@ -481,7 +574,9 @@ One consumer group (`processors`) per stream. Processors check high → normal �
 
 **The feedback loop IS the depth control.** Early work orders are broader ("find military installations near Djibouti"). Later ones are precise because the Analyst has seen the landscape ("find details on the 2017 agreement between China and Djibouti regarding the PLA Support Base lease terms"). The Analyst stops when it judges it knows enough. No external budget or termination condition — empirical observation will tell us if guardrails are needed.
 
-**Temporal awareness:** The Analyst is guided to consider temporal relevance for each claim: "is information from this long ago still relevant for this particular topic?" It can sort and filter claims by published timestamp using its query tools.
+**Source evaluation phase:** Before producing an assessment, the Analyst queries the graph for source entities behind the claims it's relying on. It examines structural profiles — ownership, funding model, geographic base, editorial focus — built by Processors from fetched source material. Where structural profiles are thin or missing, the Analyst notes this as a limitation. The Analyst evaluates evidence through corroboration patterns (do independent sources agree?), sourcing chain analysis (do multiple claims trace to the same original document?), and attribution depth (primary vs secondhand). Source evaluation is woven into the analysis text, not relegated to a separate section. The Analyst must never assert source reliability from its own memory — only from graph-grounded structural facts and observed corroboration patterns.
+
+**Temporal awareness:** The Analyst is guided to consider temporal relevance for each claim: "is information from this long ago still relevant for this particular topic?" It can sort and filter claims by published timestamp using its query tools. Temporal freshness is a named factor in confidence reasoning — the assessment explicitly states the age range of its evidence and evaluates whether older claims are still likely valid for the specific topic.
 
 **Model requirements:** Needs the most capable model available. This is where reasoning quality directly affects output quality.
 
@@ -1676,6 +1771,14 @@ Key sources: Microsoft GraphRAG, LightRAG (EMNLP 2025), Neo4j GraphRAG Python pa
 | Three-stage deployment: Docker Compose → VPS → Kubernetes | LLM API calls are the bottleneck, not compute. Single VPS carries far more load than expected. Kubernetes only when horizontal Processor scaling or HA needed. |
 | Processor atomization deferred to Kubernetes stage | Processors currently tokio tasks inside Engine. No in-memory state shared with Orchestrator — extraction to separate binary is straightforward when scaling demands it. Do not build prematurely. |
 | Same container images across all environments | Dev, VPS, Kubernetes run identical images. Only orchestration layer and runtime config differ. |
+| Graph integrity over completeness | Every graph fact must trace to a fetched source. LLM reasons freely but never writes memory-derived facts. Incomplete entities are correct; fabricated completeness is corruption. Discovered during M4 e2e testing — Processor contaminated entity names and properties from training data patterns. |
+| Corroboration as primary trust mechanism | Source reliability is evaluated through independent multi-source agreement, not LLM memory assertions about reputation. Sidesteps the epistemological regression of needing sources to evaluate sources. |
+| Source structural profiles from fetched data | Source entities built from about pages, Wikipedia entries, corporate registries — observable facts, not reputation judgments. When structural info is unavailable, Analyst states this explicitly rather than filling from memory. |
+| Assessment content schema defined | JSONB schema with inline source evaluation, per-hypothesis probability and reasoning, confidence reasoning naming specific factors, citation markers linking to claims, structured source evaluations, linked forward indicators. Designed after M4 e2e testing revealed assessment output lacked traceability and source evaluation. |
+| Three-phase Processor workflow (plan → research → extract) | Processors interleaved research and extraction, finding 2-3 sources per work order. Restructured to: plan diverse queries first, research broadly, then extract in batch. Addresses source diversity (root cause of thin assessments) and turn efficiency simultaneously. Prompt change + batch extraction tool. |
+| Batch extraction tool | Single tool call to extract all claims from a document instead of individual create_entity/create_claim/create_relationship calls. Reduces extraction from ~4 turns per claim to ~1-2 turns per document. Frees turn budget for research. Rust code change. |
+| Web search + fetch as primary research method | Source adapters (M5) supplement but are not prerequisites for quality. A skilled researcher finds diverse sources through query tuning alone. Structured adapters built organically based on observed request concentration in production, not upfront. |
+| Two-dimensional claim classification | Claims classified on attribution_depth (primary/secondhand/indirect) AND information_type (assertion/analysis/discourse/testimony). Independent dimensions — a claim can be any combination. Information type describes how the source presents the information (form), not whether it's true (truth value). Forced classification at Processor extraction time prevents LLM path-of-least-resistance; structured fields enable powerful Analyst filtering without pre-judging reliability. Structure forces thinking without doing the thinking. |
 
 ---
 

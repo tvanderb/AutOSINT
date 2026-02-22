@@ -3,14 +3,30 @@ use serde::{Deserialize, Serialize};
 
 use crate::ids::{ClaimId, EntityId};
 
-/// Attribution depth: primary source vs secondhand reporting.
+/// Attribution depth: chain of custody from original source.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AttributionDepth {
-    /// Direct source (the actual statement, filing, data).
+    /// Direct from the entity (official documents, filings, official social media).
     Primary,
-    /// Reported by an intermediary without direct quotes.
+    /// Named intermediary reporting (journalism, named expert analysis).
     Secondhand,
+    /// Anonymous sources, unnamed officials, thirdhand, unverified identities.
+    Indirect,
+}
+
+/// Information type: how the source presents the information (form, not truth value).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InformationType {
+    /// Source presents as factual claim ("source asserts this", not "this is true").
+    Assertion,
+    /// Source presents as judgment, assessment, prediction, opinion.
+    Analysis,
+    /// Collective reaction, public discussion, opinion trends.
+    Discourse,
+    /// Personal accounts from individuals claiming direct experience.
+    Testimony,
 }
 
 /// A claim in the knowledge graph.
@@ -30,8 +46,10 @@ pub struct Claim {
     /// URL/reference back to the original document.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_source_link: Option<String>,
-    /// Primary source vs secondhand reporting.
+    /// Chain of custody from original source.
     pub attribution_depth: AttributionDepth,
+    /// How the source presents the information (form, not truth value).
+    pub information_type: InformationType,
     /// Source entity (publication/outlet) that produced this claim.
     /// Linked via PUBLISHED edge in Neo4j.
     pub source_entity_id: EntityId,
@@ -50,6 +68,7 @@ impl Claim {
         content: String,
         published_timestamp: DateTime<Utc>,
         attribution_depth: AttributionDepth,
+        information_type: InformationType,
         source_entity_id: EntityId,
     ) -> Self {
         Self {
@@ -59,6 +78,7 @@ impl Claim {
             ingested_timestamp: Utc::now(),
             raw_source_link: None,
             attribution_depth,
+            information_type,
             source_entity_id,
             referenced_entity_ids: Vec::new(),
             embedding: None,

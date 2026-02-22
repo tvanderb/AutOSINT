@@ -4,7 +4,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use autosint_common::types::{AttributionDepth, Claim};
+use autosint_common::types::{AttributionDepth, Claim, InformationType};
 use autosint_common::EntityId;
 
 use crate::graph::conversions::embedding_text_for_claim;
@@ -17,6 +17,8 @@ struct Args {
     published_timestamp: String,
     #[serde(default = "default_attribution")]
     attribution_depth: String,
+    #[serde(default = "default_information_type")]
+    information_type: String,
     #[serde(default)]
     referenced_entity_ids: Vec<String>,
     #[serde(default)]
@@ -25,6 +27,10 @@ struct Args {
 
 fn default_attribution() -> String {
     "secondhand".to_string()
+}
+
+fn default_information_type() -> String {
+    "assertion".to_string()
 }
 
 pub fn handler() -> ToolHandler {
@@ -41,10 +47,19 @@ pub fn handler() -> ToolHandler {
 
             let attribution_depth = match args.attribution_depth.as_str() {
                 "primary" => AttributionDepth::Primary,
-                "secondhand" | "secondary" | "tertiary" => AttributionDepth::Secondhand,
+                "secondhand" | "secondary" => AttributionDepth::Secondhand,
+                "indirect" | "tertiary" => AttributionDepth::Indirect,
+                other => return Err(format!("Invalid attribution_depth: '{}'", other)),
+            };
+
+            let information_type = match args.information_type.as_str() {
+                "assertion" => InformationType::Assertion,
+                "analysis" => InformationType::Analysis,
+                "discourse" => InformationType::Discourse,
+                "testimony" => InformationType::Testimony,
                 other => {
                     return Err(format!(
-                        "Invalid attribution_depth: '{}'. Use 'primary', 'secondary', or 'tertiary'.",
+                        "Invalid information_type: '{}'. Use 'assertion', 'analysis', 'discourse', or 'testimony'.",
                         other
                     ))
                 }
@@ -85,6 +100,7 @@ pub fn handler() -> ToolHandler {
                 args.content,
                 published_timestamp,
                 attribution_depth,
+                information_type,
                 source_entity_id,
             );
             claim.referenced_entity_ids = referenced_entity_ids;

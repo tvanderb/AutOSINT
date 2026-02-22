@@ -65,6 +65,7 @@ impl GraphClient {
             // Claim indexes
             "CREATE INDEX claim_published_idx IF NOT EXISTS FOR (c:Claim) ON (c.published_timestamp)",
             "CREATE INDEX claim_ingested_idx IF NOT EXISTS FOR (c:Claim) ON (c.ingested_timestamp)",
+            "CREATE INDEX claim_information_type_idx IF NOT EXISTS FOR (c:Claim) ON (c.information_type)",
             // Full-text indexes (composite syntax)
             "CREATE FULLTEXT INDEX entity_name_fulltext IF NOT EXISTS FOR (e:Entity) ON EACH [e.canonical_name, e.aliases_text]",
             "CREATE FULLTEXT INDEX claim_content_fulltext IF NOT EXISTS FOR (c:Claim) ON EACH [c.content]",

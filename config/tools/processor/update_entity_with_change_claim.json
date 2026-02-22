@@ -22,8 +22,13 @@
       },
       "claim_attribution_depth": {
         "type": "string",
-        "enum": ["primary", "secondhand"],
+        "enum": ["primary", "secondhand", "indirect"],
         "description": "Attribution depth of the change claim. Default: 'secondhand'."
+      },
+      "claim_information_type": {
+        "type": "string",
+        "enum": ["assertion", "analysis", "discourse", "testimony"],
+        "description": "Information type of the change claim. Default: 'assertion'."
       },
       "claim_raw_source_link": {
         "type": "string",

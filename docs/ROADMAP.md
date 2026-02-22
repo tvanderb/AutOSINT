@@ -70,7 +70,7 @@ Everything else depends on this. No intelligence logic — pure infrastructure.
   - [x] Health check query
   - [x] Migration system (sqlx migrations)
   - [x] Initial migration: `investigations`, `work_orders`, `assessments` tables per PLAN.md schema (+ SUSPENDED columns on investigations)
-  - [x] pgvector extension enabled, vector(1536) column on assessments, ivfflat index
+  - [x] pgvector extension enabled, vector(1536) column on assessments, HNSW index (migrated from ivfflat — cold-start search miss fix)
 - [x] Redis client module (`crates/engine/src/queue/`) using `redis-rs`
   - [x] Connection initialization
   - [x] Health check (PING)
@@ -181,7 +181,8 @@ This is the foundation the entire system reasons over. Every subsequent mileston
 - [x] `search_claims` — temporal filtering (`published_after`, `published_before`, sort by `published_timestamp`)
 - [x] `search_claims` — by referenced entity ID
 - [x] `search_claims` — by source entity ID
-- [x] `search_claims` — by attribution depth (primary/secondhand)
+- [x] `search_claims` — by attribution depth (primary/secondhand/indirect)
+- [x] `search_claims` — by information type (assertion/analysis/discourse/testimony)
 
 ### Relationship Operations
 
@@ -309,6 +310,8 @@ This is the first moment of truth. The LLM touches the system for the first time
 - [x] `config/tools/processor/update_entity_with_change_claim.json`
 - [x] `config/tools/processor/fetch_source_catalog.json`
 - [x] `config/tools/processor/fetch_source_query.json`
+- [x] `config/tools/processor/web_search.json`
+- [x] `config/tools/processor/batch_extract.json`
 
 ### Processor Tool Handlers
 
@@ -326,6 +329,8 @@ Wire each tool to the graph operations from M2 and Fetch from below:
 - [x] `fetch_url` handler → Fetch service `/fetch` endpoint
 - [x] `fetch_source_catalog` handler → Fetch service `/sources` endpoint
 - [x] `fetch_source_query` handler → Fetch service `/sources/{id}/query` endpoint
+- [x] `web_search` handler → Fetch service `/search` endpoint (SearXNG backend)
+- [x] `batch_extract` handler → dedup pipeline + graph create (entities, claims, relationships from one document in a single call)
 
 ### AutOSINT Fetch (Basic)
 
@@ -568,6 +573,65 @@ The Analyst drives its own investigation: queries the graph, identifies gaps, cr
 - [x] Analyst session metrics: duration, tool calls, outcome (work_orders vs assessment)
 - [x] Assessment production metrics: count, confidence distribution
 - [x] Circuit breaker state metrics (per dependency)
+
+### M4 Completion: Quality Improvements
+
+Post-E2E testing (Test #3) revealed systemic quality gaps. Design documented in [SYSTEM_IMPROVEMENTS.md](./SYSTEM_IMPROVEMENTS.md). All items below implemented.
+
+#### Claim Two-Dimensional Classification
+
+> Review: [PLAN.md §4.3 Claims](./PLAN.md#claims-in-knowledge-graph), [SYSTEM_IMPROVEMENTS.md §2](./SYSTEM_IMPROVEMENTS.md#2-claim-classification-two-dimensional)
+
+- [x] `InformationType` enum: `Assertion`, `Analysis`, `Discourse`, `Testimony` (in `autosint_common::types`)
+- [x] `Indirect` variant added to `AttributionDepth` enum
+- [x] `information_type` field on `Claim` struct and `Claim::new()` constructor
+- [x] Neo4j: `information_type` stored on Claim nodes, range index added
+- [x] Graph conversions: backward-compatible parsing (missing `information_type` defaults to `Assertion`)
+- [x] Graph search: `information_type` filter in `ClaimSearchParams` (query-based and filter-only branches)
+- [x] `create_claim` handler: parse and validate `information_type`, updated `attribution_depth` mapping (`"tertiary"` → `Indirect`)
+- [x] `search_claims` handler: parse `information_type` filter, include in response JSON
+- [x] `update_entity_with_change_claim` handler: parse `claim_information_type`
+- [x] Tool schemas updated: `create_claim.json`, `search_claims.json`, `update_entity_with_change_claim.json`
+
+#### Batch Extraction Tool
+
+> Review: [SYSTEM_IMPROVEMENTS.md §3](./SYSTEM_IMPROVEMENTS.md#3-processor-workflow-restructure-plan--research--extract)
+
+- [x] `config/tools/processor/batch_extract.json` — schema with entity name-based resolution (not UUIDs)
+- [x] `batch_extract` handler: three-phase internal pipeline (entity dedup/create → claims → relationships), collect-warnings pattern for partial failure resilience
+- [x] Registered in `register_processor_tools`
+
+#### Assessment Schema
+
+> Review: [PLAN.md §4.3 Assessments](./PLAN.md#assessments-in-assessment-store), [SYSTEM_IMPROVEMENTS.md §1](./SYSTEM_IMPROVEMENTS.md#1-assessment-output-quality)
+
+- [x] `produce_assessment.json` structured JSONB schema: `summary`, `analysis` (with [n] citation markers), `competing_hypotheses` (probability-weighted, claim-linked), `confidence_reasoning` (named factors), `citations` (reference index), `sources_evaluated` (structural profiles with profile basis), `gaps` (with impact and resolution), `forward_indicators` (entity/claim-linked with trigger implications)
+
+#### Analyst Prompt Rewrite
+
+> Review: [SYSTEM_IMPROVEMENTS.md §1](./SYSTEM_IMPROVEMENTS.md#1-assessment-output-quality), [§8](./SYSTEM_IMPROVEMENTS.md#8-source-evaluation-by-analyst)
+
+- [x] Source evaluation phase: query source entities before assessment, evaluate corroboration independence
+- [x] Claim classification reference: explain both dimensions for `search_claims` filtering
+- [x] Assessment field guidance: inline source evaluation in analysis prose, probability assignment, confidence reasoning with named factors
+- [x] Temporal awareness: evidence age range as named confidence factor
+
+#### Processor Prompt Rewrite
+
+> Review: [SYSTEM_IMPROVEMENTS.md §3](./SYSTEM_IMPROVEMENTS.md#3-processor-workflow-restructure-plan--research--extract), [§4](./SYSTEM_IMPROVEMENTS.md#4-processor-grounding-discipline)
+
+- [x] Graph Integrity principle: only record what fetched documents state
+- [x] Comprehension vs evaluation distinction
+- [x] Entity resolution guidance with edge cases (ambiguous references, deliberately wrong references, outdated information, cross-investigation confusion)
+- [x] Source entity enrichment: fetch about/info pages for structural profiles
+- [x] Three-phase workflow: Plan (2-3 turns) → Research (15-20 turns) → Extract (remaining)
+- [x] Attribution classification guide with definitions and examples for both dimensions
+
+#### HNSW Index Migration
+
+> Review: [SYSTEM_IMPROVEMENTS.md §5](./SYSTEM_IMPROVEMENTS.md#5-assessment-search-ivfflat-cold-start)
+
+- [x] SQL migration: `DROP INDEX` ivfflat + `CREATE INDEX` HNSW on assessments embedding column
 
 ---
 

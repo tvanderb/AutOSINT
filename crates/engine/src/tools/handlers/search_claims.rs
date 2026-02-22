@@ -3,7 +3,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use autosint_common::types::AttributionDepth;
+use autosint_common::types::{AttributionDepth, InformationType};
 use autosint_common::EntityId;
 
 use crate::graph::{ClaimSearchParams, SearchMode};
@@ -24,6 +24,8 @@ struct Args {
     published_before: Option<String>,
     #[serde(default)]
     attribution_depth: Option<String>,
+    #[serde(default)]
+    information_type: Option<String>,
     #[serde(default)]
     #[allow(dead_code)]
     sort_by: Option<String>,
@@ -84,8 +86,21 @@ pub fn handler() -> ToolHandler {
                 .as_deref()
                 .map(|s| match s {
                     "primary" => Ok(AttributionDepth::Primary),
-                    "secondhand" | "secondary" | "tertiary" => Ok(AttributionDepth::Secondhand),
+                    "secondhand" | "secondary" => Ok(AttributionDepth::Secondhand),
+                    "indirect" | "tertiary" => Ok(AttributionDepth::Indirect),
                     other => Err(format!("Invalid attribution_depth: '{}'", other)),
+                })
+                .transpose()?;
+
+            let information_type = args
+                .information_type
+                .as_deref()
+                .map(|s| match s {
+                    "assertion" => Ok(InformationType::Assertion),
+                    "analysis" => Ok(InformationType::Analysis),
+                    "discourse" => Ok(InformationType::Discourse),
+                    "testimony" => Ok(InformationType::Testimony),
+                    other => Err(format!("Invalid information_type: '{}'", other)),
                 })
                 .transpose()?;
 
@@ -114,6 +129,7 @@ pub fn handler() -> ToolHandler {
                 source_entity_id,
                 referenced_entity_id,
                 attribution_depth,
+                information_type,
                 limit: args.limit,
             };
 
@@ -132,6 +148,7 @@ pub fn handler() -> ToolHandler {
                         "source_entity_id": r.item.source_entity_id.to_string(),
                         "published_timestamp": r.item.published_timestamp.to_rfc3339(),
                         "attribution_depth": format!("{:?}", r.item.attribution_depth).to_lowercase(),
+                        "information_type": format!("{:?}", r.item.information_type).to_lowercase(),
                         "raw_source_link": r.item.raw_source_link,
                         "score": r.score,
                     })

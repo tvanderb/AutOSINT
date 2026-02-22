@@ -7,7 +7,7 @@ use neo4rs::{Node, Relation, Row};
 use serde_json::Value;
 use uuid::Uuid;
 
-use autosint_common::types::{AttributionDepth, Claim, Entity, Relationship};
+use autosint_common::types::{AttributionDepth, Claim, Entity, InformationType, Relationship};
 use autosint_common::{ClaimId, EntityId, RelationshipId};
 
 use super::GraphError;
@@ -208,9 +208,24 @@ pub fn node_to_claim(
     let attribution_depth = match attribution_depth_str.as_str() {
         "primary" => AttributionDepth::Primary,
         "secondhand" => AttributionDepth::Secondhand,
+        "indirect" => AttributionDepth::Indirect,
         other => {
             return Err(GraphError::Query(format!(
                 "Unknown attribution_depth: '{}'",
+                other
+            )))
+        }
+    };
+
+    // Backward compat: existing claims without information_type default to Assertion.
+    let information_type = match node_get_optional::<String>(node, "information_type").as_deref() {
+        Some("assertion") | None => InformationType::Assertion,
+        Some("analysis") => InformationType::Analysis,
+        Some("discourse") => InformationType::Discourse,
+        Some("testimony") => InformationType::Testimony,
+        Some(other) => {
+            return Err(GraphError::Query(format!(
+                "Unknown information_type: '{}'",
                 other
             )))
         }
@@ -223,6 +238,7 @@ pub fn node_to_claim(
         ingested_timestamp: parse_datetime(&ingested_str)?,
         raw_source_link,
         attribution_depth,
+        information_type,
         source_entity_id,
         referenced_entity_ids,
         embedding,

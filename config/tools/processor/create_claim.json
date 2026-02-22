@@ -18,8 +18,13 @@
       },
       "attribution_depth": {
         "type": "string",
-        "enum": ["primary", "secondhand"],
-        "description": "'primary' if from the direct source (filing, statement, data). 'secondhand' if reported by an intermediary. Default: 'secondhand'."
+        "enum": ["primary", "secondhand", "indirect"],
+        "description": "'primary' = direct from the entity (official documents, filings, official social media). 'secondhand' = named intermediary reporting (journalism, named expert analysis). 'indirect' = anonymous sources, unnamed officials, thirdhand, unverified identities. Default: 'secondhand'."
+      },
+      "information_type": {
+        "type": "string",
+        "enum": ["assertion", "analysis", "discourse", "testimony"],
+        "description": "How the source presents the information (form, not truth value). 'assertion' = source presents as factual claim. 'analysis' = judgment, assessment, prediction, opinion. 'discourse' = collective reaction, public discussion, opinion trends. 'testimony' = personal accounts from individuals claiming direct experience. Default: 'assertion'."
       },
       "referenced_entity_ids": {
         "type": "array",

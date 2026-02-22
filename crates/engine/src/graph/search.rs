@@ -1,6 +1,6 @@
 use neo4rs::query;
 
-use autosint_common::types::{AttributionDepth, Claim, Entity, Relationship};
+use autosint_common::types::{AttributionDepth, Claim, Entity, InformationType, Relationship};
 use autosint_common::EntityId;
 use chrono::{DateTime, Utc};
 
@@ -45,6 +45,7 @@ pub struct ClaimSearchParams {
     pub source_entity_id: Option<EntityId>,
     pub referenced_entity_id: Option<EntityId>,
     pub attribution_depth: Option<AttributionDepth>,
+    pub information_type: Option<InformationType>,
     pub limit: Option<u32>,
 }
 
@@ -301,8 +302,19 @@ impl super::GraphClient {
                 let depth_str = match depth {
                     AttributionDepth::Primary => "primary",
                     AttributionDepth::Secondhand => "secondhand",
+                    AttributionDepth::Indirect => "indirect",
                 };
                 where_parts.push(format!("c.attribution_depth = '{}'", depth_str));
+            }
+
+            if let Some(ref info_type) = params.information_type {
+                let type_str = match info_type {
+                    InformationType::Assertion => "assertion",
+                    InformationType::Analysis => "analysis",
+                    InformationType::Discourse => "discourse",
+                    InformationType::Testimony => "testimony",
+                };
+                where_parts.push(format!("c.information_type = '{}'", type_str));
             }
 
             let where_str = if where_parts.is_empty() {
@@ -365,8 +377,19 @@ impl super::GraphClient {
             let depth_str = match depth {
                 AttributionDepth::Primary => "primary",
                 AttributionDepth::Secondhand => "secondhand",
+                AttributionDepth::Indirect => "indirect",
             };
             where_parts.push(format!("c.attribution_depth = '{}'", depth_str));
+        }
+
+        if let Some(ref info_type) = params.information_type {
+            let type_str = match info_type {
+                InformationType::Assertion => "assertion",
+                InformationType::Analysis => "analysis",
+                InformationType::Discourse => "discourse",
+                InformationType::Testimony => "testimony",
+            };
+            where_parts.push(format!("c.information_type = '{}'", type_str));
         }
     }
 

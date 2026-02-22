@@ -1,0 +1,103 @@
+{
+  "name": "batch_extract",
+  "description": "Extract multiple entities, claims, and relationships from a single source document in one call. Far more efficient than individual create calls. The handler resolves entity names to existing graph entities via dedup, creates new entities where needed, and links claims and relationships by name.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "source_entity_id": {
+        "type": "string",
+        "description": "UUID of the source entity (publication/outlet) that published this document."
+      },
+      "source_url": {
+        "type": "string",
+        "description": "URL of the source document."
+      },
+      "published_timestamp": {
+        "type": "string",
+        "description": "When the document was published (RFC3339 format)."
+      },
+      "entities": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "canonical_name": {
+              "type": "string",
+              "description": "Full proper name of the entity."
+            },
+            "kind": {
+              "type": "string",
+              "description": "Entity type (e.g. 'person', 'organization', 'country', 'event')."
+            },
+            "summary": {
+              "type": "string",
+              "description": "Brief description based ONLY on what the source document states."
+            },
+            "properties": {
+              "type": "object",
+              "description": "Additional properties from the source document."
+            }
+          },
+          "required": ["canonical_name", "kind"]
+        },
+        "description": "Entities mentioned in the document. Handler will dedup against existing graph entities."
+      },
+      "claims": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "string",
+              "description": "The information content — a self-contained factual statement."
+            },
+            "attribution_depth": {
+              "type": "string",
+              "enum": ["primary", "secondhand", "indirect"],
+              "description": "'primary' = direct source. 'secondhand' = named intermediary. 'indirect' = anonymous/thirdhand."
+            },
+            "information_type": {
+              "type": "string",
+              "enum": ["assertion", "analysis", "discourse", "testimony"],
+              "description": "How the source presents this information."
+            },
+            "referenced_entity_names": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Names of entities this claim is about (matched to entities in this batch or existing graph entities)."
+            }
+          },
+          "required": ["content", "attribution_depth", "information_type"]
+        },
+        "description": "Claims extracted from the document."
+      },
+      "relationships": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "source_entity_name": {
+              "type": "string",
+              "description": "Name of the source entity in the relationship."
+            },
+            "target_entity_name": {
+              "type": "string",
+              "description": "Name of the target entity in the relationship."
+            },
+            "description": {
+              "type": "string",
+              "description": "Description of the relationship."
+            },
+            "confidence": {
+              "type": "number",
+              "description": "Confidence level (0.0-1.0)."
+            }
+          },
+          "required": ["source_entity_name", "target_entity_name", "description"]
+        },
+        "description": "Relationships between entities mentioned in the document."
+      }
+    },
+    "required": ["source_entity_id", "source_url", "published_timestamp", "entities", "claims"]
+  }
+}

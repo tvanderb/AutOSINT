@@ -1,3 +1,4 @@
+mod batch_extract;
 mod create_claim;
 mod create_entity;
 mod create_relationship;
@@ -40,6 +41,7 @@ pub fn register_processor_tools(registry: &mut ToolRegistry) {
     registry.register("fetch_source_catalog", fetch_source_catalog::handler());
     registry.register("fetch_source_query", fetch_source_query::handler());
     registry.register("web_search", web_search::handler());
+    registry.register("batch_extract", batch_extract::handler());
 }
 
 /// Register all Analyst tool handlers with the registry.
