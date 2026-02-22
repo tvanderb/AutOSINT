@@ -141,7 +141,10 @@ async fn processor_worker_loop(
         // Periodically reclaim stale messages from dead consumers.
         // XCLAIM transfers ownership to this consumer; the next dequeue(ID=0) picks them up.
         if last_reclaim.elapsed() >= reclaim_interval {
-            match queue.reclaim_pending(&consumer_name, reclaim_min_idle_ms).await {
+            match queue
+                .reclaim_pending(&consumer_name, reclaim_min_idle_ms)
+                .await
+            {
                 Ok(reclaimed) if !reclaimed.is_empty() => {
                     tracing::info!(
                         consumer = %consumer_name,

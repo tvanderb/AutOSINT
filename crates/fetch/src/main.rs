@@ -61,8 +61,8 @@ async fn main() {
         .build()
         .expect("Failed to build HTTP client");
 
-    let search_backend_url = std::env::var("SEARCH_BACKEND_URL")
-        .unwrap_or_else(|_| "http://localhost:8888".into());
+    let search_backend_url =
+        std::env::var("SEARCH_BACKEND_URL").unwrap_or_else(|_| "http://localhost:8888".into());
 
     let state = Arc::new(AppState {
         http,

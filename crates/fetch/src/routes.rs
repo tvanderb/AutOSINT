@@ -69,7 +69,10 @@ pub async fn fetch_handler(
         if !is_text {
             return Err((
                 StatusCode::UNPROCESSABLE_ENTITY,
-                format!("Unsupported content type: {}. Only text-based content is supported.", ct),
+                format!(
+                    "Unsupported content type: {}. Only text-based content is supported.",
+                    ct
+                ),
             ));
         }
     }
@@ -117,10 +120,7 @@ pub async fn search_handler(
     let start = std::time::Instant::now();
     let num_results = request.num_results.unwrap_or(10).min(20);
 
-    let search_url = format!(
-        "{}/search",
-        state.search_backend_url.trim_end_matches('/')
-    );
+    let search_url = format!("{}/search", state.search_backend_url.trim_end_matches('/'));
 
     let response = state
         .http
@@ -134,20 +134,28 @@ pub async fn search_handler(
         .await
         .map_err(|e| {
             metrics::counter!("fetch.search.errors").increment(1);
-            (StatusCode::BAD_GATEWAY, format!("Search backend request failed: {}", e))
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Search backend request failed: {}", e),
+            )
         })?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         metrics::counter!("fetch.search.errors").increment(1);
-        return Err((StatusCode::BAD_GATEWAY, format!("Search backend returned {}: {}", status, body)));
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            format!("Search backend returned {}: {}", status, body),
+        ));
     }
 
-    let searx: SearxResponse = response
-        .json()
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Failed to parse search response: {}", e)))?;
+    let searx: SearxResponse = response.json().await.map_err(|e| {
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("Failed to parse search response: {}", e),
+        )
+    })?;
 
     let results: Vec<SearchResult> = searx
         .results

@@ -67,10 +67,7 @@ impl LlmClient {
             }
         };
 
-        let env_var = config
-            .api_key_env
-            .as_deref()
-            .unwrap_or(default_env_var);
+        let env_var = config.api_key_env.as_deref().unwrap_or(default_env_var);
 
         let api_key = match std::env::var(env_var) {
             Ok(key) if !key.is_empty() => key,
